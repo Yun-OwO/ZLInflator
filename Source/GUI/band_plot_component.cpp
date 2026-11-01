@@ -161,6 +161,42 @@ namespace zlinterface {
             g.strokePath(gainPath, juce::PathStrokeType(2.5f, juce::PathStrokeType::curved,
                                                         juce::PathStrokeType::rounded));
 
+            // the transfer curve of the shaper this band runs, laid over the part
+            // of the spectrum the band covers: the horizontal axis sweeps the
+            // input level from the bottom to the top of the plot
+            if (getShaper != nullptr) {
+                if (const auto *bandShaper = getShaper(i)) {
+                    const auto xLow = getX(fLow);
+                    const auto xHigh = getX(fHigh);
+                    if (xHigh - xLow > 2.f) {
+                        constexpr int steps = 72;
+                        juce::Path curve;
+                        for (int step = 0; step <= steps; ++step) {
+                            const auto t = static_cast<float>(step) / static_cast<float>(steps);
+                            const auto inputDb = yMin + (0.f - yMin) * t;
+                            const auto output = std::abs(
+                                    (*bandShaper)(juce::Decibels::decibelsToGain(inputDb)));
+                            const auto outputDb = output > 0.f
+                                                  ? juce::Decibels::gainToDecibels(output)
+                                                  : yMin;
+                            const auto px = xLow + (xHigh - xLow) * t;
+                            const auto py = getY(outputDb + bandGainValues[i]);
+                            if (step == 0) {
+                                curve.startNewSubPath(px, py);
+                            } else {
+                                curve.lineTo(px, py);
+                            }
+                        }
+                        g.setColour(uiBase.getLineColor1().withAlpha(isActive ? .55f : .28f));
+                        g.strokePath(curve, juce::PathStrokeType(4.5f, juce::PathStrokeType::curved,
+                                                                 juce::PathStrokeType::rounded));
+                        g.setColour(uiBase.getLineColor1().withAlpha(isActive ? .95f : .6f));
+                        g.strokePath(curve, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved,
+                                                                 juce::PathStrokeType::rounded));
+                    }
+                }
+            }
+
             // the trim that line stands for, right above it
             const auto text = juce::String(bandGainValues[i] > 0.f ? "+" : "") +
                               zlinterface::formatFloat(bandGainValues[i], 1) + " dB";

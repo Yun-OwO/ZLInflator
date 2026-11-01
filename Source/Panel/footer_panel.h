@@ -45,11 +45,14 @@ namespace zlpanel {
         juce::AudioProcessorValueTreeState &apvts;
 
         std::unique_ptr<zlinterface::RotarySliderComponent> inputGain, outputGain, wet;
-        std::unique_ptr<zlinterface::RotarySliderComponent> overSample;
-        // every control carries its own caption, so the four titles share a row
-        std::array<std::unique_ptr<zlinterface::RotarySliderComponent> *, 4> knobList{
-                &inputGain, &outputGain, &wet, &overSample};
+        std::unique_ptr<zlinterface::ComboboxComponent> overSample;
+        // the knobs carry their own captions, the box takes its name from the parameter
+        std::array<std::unique_ptr<zlinterface::RotarySliderComponent> *, 3> knobList{
+                &inputGain, &outputGain, &wet};
+        std::array<std::unique_ptr<zlinterface::ComboboxComponent> *, 1> boxList{&overSample};
+        std::array<std::string, 1> boxIDs{zldsp::overSample::ID};
         juce::OwnedArray<juce::AudioProcessorValueTreeState::SliderAttachment> sliderAttachments;
+        juce::OwnedArray<juce::AudioProcessorValueTreeState::ComboBoxAttachment> boxAttachments;
 
         zlinterface::UIBase *uiBase;
 

@@ -36,8 +36,13 @@ MainPanel::MainPanel(ZLInflatorAudioProcessor &p) :
     // as a small A/B button in the top right corner, the auto gain switch under
     // it. Both are built before the first resized(), which the resize limits
     // above the panel already trigger.
-    effectButton = std::make_unique<zlinterface::ButtonComponent>("A/B", uiBase);
-    effectButton->setCaptionFontSize(uiBase.getFontSize() * zlinterface::FontNormal);
+    // the switch shows the state itself: A is the dry signal, B the saturated one
+    effectButton = std::make_unique<zlinterface::ButtonComponent>("", uiBase);
+    effectButton->getButton().setClickingTogglesState(true);
+    effectButton->setCaption("B");
+    effectButton->getButton().onStateChange = [this] {
+        effectButton->setCaption(effectButton->getButton().getToggleState() ? "B" : "A");
+    };
     effectAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
             p.parameters, zldsp::effectIn::ID, effectButton->getButton());
     addAndMakeVisible(*effectButton);
@@ -89,18 +94,19 @@ void MainPanel::resized() {
     auto rightBound = inner.removeFromRight(cellWidth);
     auto cornerBound = rightBound.removeFromTop(rowHeight);
     auto meterBound = rightBound.removeFromTop(plotHeight);
-    auto gainBound = rightBound;
+    auto gainBound = rightBound.removeFromTop(
+            juce::jmin(fontSize * (zlinterface::ControlRowHeight + zlinterface::ControlCaptionHeight),
+                       juce::jmax(0.f, rightBound.getHeight())));
 
     effectButton->setBounds(cornerBound.withSizeKeepingCentre(
             juce::jmin(cornerBound.getWidth(), fontSize * 3.4f),
             juce::jmin(cornerBound.getHeight(), fontSize * zlinterface::ControlRowHeight)).toNearestInt());
-    const auto gainHeight = juce::jmin(fontSize * zlinterface::ControlRowHeight,
-                                       juce::jmax(0.f, gainBound.getHeight() * .45f));
-    compensationButton->setBounds(gainBound.removeFromTop(gainHeight).withSizeKeepingCentre(
-            juce::jmin(gainBound.getWidth(), fontSize * 5.f), gainHeight).toNearestInt());
 
     auto bandBound = inner.removeFromBottom(stripHeight);
     bandPanel.setBounds(bandBound.reduced(fontSize * .2f, fontSize * .1f).toNearestInt());
+
+    // the auto gain switch continues the column right under the meters
+    compensationButton->setBounds(gainBound.toNearestInt());
 
     auto headerBound = inner.removeFromTop(rowHeight);
     logoPanel.setBounds(headerBound.removeFromLeft(
