@@ -32,11 +32,19 @@ MainPanel::MainPanel(ZLInflatorAudioProcessor &p) :
         }, p.getSpectrumSource(), p.parameters, uiBase),
         meterPanel(p, uiBase),
         footerPanel(p.parameters, uiBase) {
-    // the bypass is the one global switch that has to stay in reach
-    effectButton = std::make_unique<zlinterface::ButtonComponent>("Effect In", uiBase);
+    // the bypass is the one global switch that has to stay in reach, it reads
+    // as a small A/B button in the top right corner, the auto gain switch under
+    // it. Both are built before the first resized(), which the resize limits
+    // above the panel already trigger.
+    effectButton = std::make_unique<zlinterface::ButtonComponent>("A/B", uiBase);
+    effectButton->setCaptionFontSize(uiBase.getFontSize() * zlinterface::FontNormal);
     effectAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
             p.parameters, zldsp::effectIn::ID, effectButton->getButton());
     addAndMakeVisible(*effectButton);
+    compensationButton = std::make_unique<zlinterface::ButtonComponent>("Auto Gain", uiBase);
+    compensationAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+            p.parameters, zldsp::autoGain::ID, compensationButton->getButton());
+    addAndMakeVisible(*compensationButton);
     addAndMakeVisible(logoPanel);
     addAndMakeVisible(bandPanel);
     addAndMakeVisible(bandPlotComponent);
@@ -65,32 +73,40 @@ void MainPanel::resized() {
         return;
     }
 
-    // the band controls are a strip along the bottom, the split knobs sit
-    // between the bands they divide
+    // three rows: the header with the brand and the global controls, the
+    // figure, and the strip of band controls. The right hand column repeats the
+    // same rows: the bypass switch, the meters level with the figure, the auto
+    // gain switch in the corner under them.
+    const auto rowHeight = juce::jmin(fontSize * zlinterface::KnobRowHeight,
+                                      inner.getHeight() * 0.3f);
     // one row of style boxes plus the flat drag bars under them
     const auto stripHeight = juce::jmin(inner.getHeight() * 0.42f,
                                         fontSize * (zlinterface::ControlRowHeight
-                                                    + zlinterface::ControlCaptionHeight + 1.5f + .3f));
+                                                    + zlinterface::ControlCaptionHeight + 1.8f));
+    const auto plotHeight = juce::jmax(0.f, inner.getHeight() - rowHeight - stripHeight);
+
+    const auto cellWidth = juce::jmin(inner.getWidth() * 0.16f, fontSize * 4.6f);
+    auto rightBound = inner.removeFromRight(cellWidth);
+    auto cornerBound = rightBound.removeFromTop(rowHeight);
+    auto meterBound = rightBound.removeFromTop(plotHeight);
+    auto gainBound = rightBound;
+
+    effectButton->setBounds(cornerBound.withSizeKeepingCentre(
+            juce::jmin(cornerBound.getWidth(), fontSize * 3.4f),
+            juce::jmin(cornerBound.getHeight(), fontSize * zlinterface::ControlRowHeight)).toNearestInt());
+    const auto gainHeight = juce::jmin(fontSize * zlinterface::ControlRowHeight,
+                                       juce::jmax(0.f, gainBound.getHeight() * .45f));
+    compensationButton->setBounds(gainBound.removeFromTop(gainHeight).withSizeKeepingCentre(
+            juce::jmin(gainBound.getWidth(), fontSize * 5.f), gainHeight).toNearestInt());
+
     auto bandBound = inner.removeFromBottom(stripHeight);
     bandPanel.setBounds(bandBound.reduced(fontSize * .2f, fontSize * .1f).toNearestInt());
 
-    // the meters keep the right edge, from the header down to the figure, so
-    // they read as the two long bars of the layout sketch
-    auto meterBound = inner.removeFromRight(juce::jmin(inner.getWidth() * 0.14f, fontSize * 5.f));
-    meterPanel.setBounds(meterBound.toNearestInt());
-
-    // the header holds the brand and the bypass switch, the global controls
-    // fill the strip between them and the meters
-    const auto headerHeight = juce::jmin(inner.getHeight() * 0.3f,
-                                         fontSize * (zlinterface::ControlRowHeight
-                                                     + zlinterface::ControlCaptionHeight
-                                                     + zlinterface::KnobRowHeight));
-    auto headerBound = inner.removeFromTop(headerHeight);
+    auto headerBound = inner.removeFromTop(rowHeight);
     logoPanel.setBounds(headerBound.removeFromLeft(
             juce::jmin(headerBound.getWidth() * 0.22f, fontSize * 9.f)).toNearestInt());
-    effectButton->setBounds(headerBound.removeFromLeft(
-            juce::jmin(headerBound.getWidth() * 0.16f, fontSize * 3.6f)).toNearestInt());
     footerPanel.setBounds(headerBound.reduced(fontSize * .2f, 0.f).toNearestInt());
 
+    meterPanel.setBounds(meterBound.toNearestInt());
     bandPlotComponent.setBounds(inner.reduced(fontSize * .2f, 0.f).toNearestInt());
 }

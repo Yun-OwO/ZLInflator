@@ -36,8 +36,12 @@ public:
 private:
     zlinterface::UIBase uiBase;
     zlpanel::LogoPanel logoPanel;
+    // the bypass switch sits in the top right corner, the auto gain switch
+    // right under it
     std::unique_ptr<zlinterface::ButtonComponent> effectButton;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> effectAttachment;
+    std::unique_ptr<zlinterface::ButtonComponent> compensationButton;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> compensationAttachment;
 
     zlpanel::BandPanel bandPanel;
     zlinterface::BandPlotComponent bandPlotComponent;

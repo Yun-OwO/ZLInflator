@@ -20,6 +20,8 @@ You should have received a copy of the GNU General Public License along with ZLI
 #include "../PluginProcessor.h"
 #include "panel_definitions.h"
 
+/** The input and output meters. They start level with the figure and run down
+    to the row of the auto gain switch, so the pair reads as one long column. */
 class MeterPanel : public juce::Component {
 public:
     explicit MeterPanel(ZLInflatorAudioProcessor &p, zlinterface::UIBase &base);
@@ -33,10 +35,6 @@ public:
 private:
     zlinterface::MeterBackgroundComponent inputBackground, outputBackground;
     zlinterface::MeterComponent inputMeter, outputMeter;
-
-    std::unique_ptr<zlinterface::ButtonComponent> compensationButton;
-    std::array<std::unique_ptr<zlinterface::ButtonComponent> *, 1> buttonList{&compensationButton};
-    juce::OwnedArray<juce::AudioProcessorValueTreeState::ButtonAttachment> buttonAttachments;
 
     zlinterface::UIBase *uiBase;
 };

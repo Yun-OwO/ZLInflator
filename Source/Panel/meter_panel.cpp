@@ -22,10 +22,6 @@ MeterPanel::MeterPanel(ZLInflatorAudioProcessor &p, zlinterface::UIBase &base) :
     addAndMakeVisible(outputBackground);
     addAndMakeVisible(inputMeter);
     addAndMakeVisible(outputMeter);
-
-    // init buttons
-    std::array<std::string, 1> buttonID{zldsp::autoGain::ID};
-    zlpanel::attachButtons(*this, buttonList, buttonAttachments, buttonID, p.parameters, base);
 }
 
 MeterPanel::~MeterPanel() = default;
@@ -37,31 +33,11 @@ void MeterPanel::resized() {
     if (bound.getWidth() <= 0.f || bound.getHeight() <= 0.f) {
         return;
     }
-    const auto fontSize = uiBase->getFontSize();
-    // auto gain is a box shaped button stacked under the oversampling choice:
-    // both keep the same size and share the column of the strip above
-    const auto boxWidth = juce::jmin(bound.getWidth(), fontSize * 6.f);
-    const auto captionHeight = fontSize * zlinterface::ControlCaptionHeight;
-    const auto boxHeight = juce::jmin(fontSize * zlinterface::ControlHeight,
-                                      juce::jmax(0.f, bound.getHeight() * .34f - captionHeight));
-    const auto columnRight = bound.getRight();
-    const auto bottom = bound.getBottom();
-    const auto blockHeight = captionHeight + boxHeight;
-    if (boxWidth > 0.f && blockHeight > 0.f) {
-        // the block keeps the caption row, the button lays itself out inside it
-        compensationButton->setBounds(juce::Rectangle<float>(columnRight - boxWidth,
-                                                             bottom - blockHeight,
-                                                             boxWidth, blockHeight).toNearestInt());
-    }
-    // the meters run the whole height above the auto gain block
-    auto meterArea = bound.withBottom(juce::jmax(bound.getY(),
-                                                 bottom - blockHeight - fontSize * .2f));
-    const auto meterWidth = juce::jmin(meterArea.getWidth() * .65f, fontSize * 3.6f);
-    auto meterBound = juce::Rectangle<float>(columnRight - boxWidth + (boxWidth - meterWidth) * .5f,
-                                             meterArea.getY(), meterWidth, meterArea.getHeight());
-    auto inputBound = meterBound.removeFromLeft(meterWidth * .5f);
+    // the pair of meters fills the whole height: their tops line up with the
+    // top of the figure, their bottoms with the row shared by the band strip
+    auto inputBound = bound.removeFromLeft(bound.getWidth() * 0.5f);
     inputBackground.setBounds(inputBound.toNearestInt());
-    outputBackground.setBounds(meterBound.toNearestInt());
+    outputBackground.setBounds(bound.toNearestInt());
     inputMeter.setBounds(inputBound.toNearestInt());
-    outputMeter.setBounds(meterBound.toNearestInt());
+    outputMeter.setBounds(bound.toNearestInt());
 }
