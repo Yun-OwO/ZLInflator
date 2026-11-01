@@ -72,6 +72,12 @@ namespace zlinterface {
             button.repaint();
         }
 
+        /** Draws both labels, the picked one lit and its mate dim. */
+        void setPairCaption(const juce::String &offText, const juce::String &onText) {
+            myLookAndFeel.setPairCaption(offText, onText);
+            button.repaint();
+        }
+
     private:
         ButtonLookAndFeel myLookAndFeel;
         NameLookAndFeel nameLookAndFeel;

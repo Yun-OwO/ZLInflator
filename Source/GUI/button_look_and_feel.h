@@ -32,7 +32,7 @@ namespace zlinterface {
             // a caption replaces the ON/OFF pair for buttons that carry their own text
             if (caption.isNotEmpty()) {
                 g.setColour(editable.load() ? uiBase->getTextColor() : uiBase->getTextInactiveColor());
-                g.setFont(captionFontSize > 0.f ? captionFontSize : bounds.getHeight() * 0.34f);
+                g.setFont(juce::jmax(bounds.getHeight() * 0.34f, captionFontSize));
                 auto textWidth = g.getCurrentFont().getStringWidthFloat(caption);
                 if (textWidth > bounds.getWidth() * 0.86f && textWidth > 0) {
                     g.setFont(g.getCurrentFont().withHeight(g.getCurrentFont().getHeight()
@@ -42,6 +42,31 @@ namespace zlinterface {
                                      juce::roundToInt(bounds.getCentre().x),
                                      juce::roundToInt(bounds.getCentre().y + g.getCurrentFont().getDescent()),
                                      juce::Justification::horizontallyCentred);
+                return;
+            }
+            // a pair caption keeps both labels on show, the picked one lit
+            if (pairOff.isNotEmpty() || pairOn.isNotEmpty()) {
+                g.setFont(uiBase->getFontSize() > 0 ? uiBase->getFontSize() * FontNormal
+                                                    : bounds.getHeight() * 0.35f);
+                const auto width = juce::jmax(g.getCurrentFont().getStringWidthFloat(pairOff),
+                                              g.getCurrentFont().getStringWidthFloat(pairOn)) * 2.4f;
+                if (width > bounds.getWidth() * 0.8f && width > 0) {
+                    g.setFont(g.getCurrentFont().withHeight(g.getCurrentFont().getHeight()
+                                                            * bounds.getWidth() * 0.8f / width));
+                }
+                const auto isOn = button.getToggleState();
+                const auto drawWord = [&](const juce::String &word, bool active, float offset) {
+                    if (word.isEmpty()) {
+                        return;
+                    }
+                    g.setColour(active ? uiBase->getTextColor() : uiBase->getTextInactiveColor());
+                    g.drawSingleLineText(word,
+                                         juce::roundToInt(bounds.getCentre().x + bounds.getWidth() * offset),
+                                         juce::roundToInt(bounds.getCentre().y + g.getCurrentFont().getDescent()),
+                                         juce::Justification::horizontallyCentred);
+                };
+                drawWord(pairOff, !isOn, -0.19f);
+                drawWord(pairOn, isOn, 0.19f);
                 return;
             }
             // draw ON/OFF
@@ -93,6 +118,13 @@ namespace zlinterface {
             caption = text;
         }
 
+        /** A pair of labels that stay drawn together, the picked one lit and
+            its mate dim, the way a FabFilter style switch reads. */
+        void setPairCaption(const juce::String &offText, const juce::String &onText) {
+            pairOff = offText;
+            pairOn = onText;
+        }
+
         /** Zero picks a size from the button height. */
         void setCaptionFontSize(float size) {
             captionFontSize = size;
@@ -101,6 +133,7 @@ namespace zlinterface {
     private:
         std::atomic<bool> editable = true;
         juce::String caption;
+        juce::String pairOff, pairOn;
         float captionFontSize = 0.f;
 
         UIBase *uiBase;

@@ -39,6 +39,13 @@ namespace zlpanel {
             panel can line the meters up under that column */
         static float getPreferredWidth(float fontSize);
 
+        /** Makes the oversampling cell part of the strip but anchored on the
+            right hand column: the header row ends with it, above the meters. */
+        void setOverSampleAnchor(float rightEdge);
+
+        /** Places the oversampling cell as part of the strip. */
+        void setOverSampleBounds(float x, float y, float width, float boxHeight);
+
         static float getPreferredHeight(float fontSize);
 
     private:
@@ -55,6 +62,7 @@ namespace zlpanel {
         juce::OwnedArray<juce::AudioProcessorValueTreeState::ComboBoxAttachment> boxAttachments;
 
         zlinterface::UIBase *uiBase;
+        float overSampleAnchorRight = 0.f;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FooterPanel)
     };
