@@ -145,7 +145,7 @@ namespace zlinterface {
         for (size_t i = 0; i < BandNUM; ++i) {
             const auto [fLow, fHigh] = getBandRange(i);
             const auto y = getY(bandGains[i]);
-            const auto alpha = 0.5f + 0.18f * static_cast<float>(i);
+            const auto alpha = 0.62f + 0.16f * static_cast<float>(i);
             const auto isActive = activeBand == static_cast<int>(i) &&
                                   (isDraggingGain || getBandLineBound(i).contains(lastMousePos));
 
@@ -154,7 +154,7 @@ namespace zlinterface {
             gainPath.startNewSubPath(getX(fLow), y);
             gainPath.lineTo(getX(fHigh), y);
             // a soft glow around the line, so the three bands read apart
-            g.setColour(uiBase.getTextColor().withAlpha(alpha * (isActive ? .5f : .25f)));
+            g.setColour(uiBase.getTextColor().withAlpha(alpha * (isActive ? .5f : .3f)));
             g.strokePath(gainPath, juce::PathStrokeType(7.f, juce::PathStrokeType::curved,
                                                         juce::PathStrokeType::rounded));
             g.setColour(isActive ? uiBase.getLineColor1() : uiBase.getTextColor().withAlpha(alpha));

@@ -57,7 +57,7 @@ namespace zlpanel {
     void FooterPanel::resized() {
         auto bound = getLocalBounds().toFloat();
         const auto fontSize = uiBase.getFontSize();
-        auto inner = bound.reduced(fontSize * .7f, fontSize * .5f);
+        auto inner = bound.reduced(fontSize * .7f, fontSize * .28f);
         if (inner.getWidth() <= 0 || inner.getHeight() <= 0) {
             return;
         }
@@ -103,9 +103,11 @@ namespace zlpanel {
     float FooterPanel::getPreferredHeight(float totalHeight) const {
         const auto fontSize = uiBase.getFontSize();
         if (!settingPage) {
-            return juce::jmin(totalHeight * .14f, fontSize * zlinterface::ControlRowHeight);
+            // one row of control, the same height as any other button
+            return juce::jmin(totalHeight * .34f,
+                              fontSize * (zlinterface::ControlRowHeight + .6f));
         }
-        return juce::jmin(totalHeight * .66f, fontSize * zlinterface::ControlRowHeight * 2.3f);
+        return juce::jmin(totalHeight * .8f, fontSize * zlinterface::ControlRowHeight * 2.6f);
     }
 
     void FooterPanel::parameterChanged(const juce::String &parameterID, float) {
