@@ -508,13 +508,15 @@ namespace zlinterface {
 
     juce::Rectangle<float> BandPlotComponent::getPlotBound() const {
         const auto fontSize = uiBase.getFontSize();
+        // the card takes one inset, the graph the small margin inside it: the
+        // figure has to start right under the switches, so it cannot afford the
+        // second, wider inset the old panel used
         auto bound = getLocalBounds().toFloat();
-        bound = uiBase.getRoundedShadowRectangleArea(bound, fontSize * .5f, {});
         bound = uiBase.getRoundedShadowRectangleArea(bound, fontSize * .5f, {});
         if (bound.getWidth() <= 0 || bound.getHeight() <= 0) {
             return {};
         }
-        return bound.reduced(fontSize * 0.6f, fontSize * 0.5f);
+        return bound.reduced(fontSize * 0.45f, fontSize * 0.3f);
     }
 
     juce::Rectangle<float> BandPlotComponent::getHandleBound(float x) const {

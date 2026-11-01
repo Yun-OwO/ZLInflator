@@ -167,10 +167,21 @@ void MainPanel::resized() {
         const auto buttonWidth = juce::jmin(bypassCell.getWidth(), fontSize * 3.6f);
         effectButton->setBounds(bypassCell.withSizeKeepingCentre(buttonWidth, switchHeight).toNearestInt());
     }
-    meterPanel.setBounds(juce::Rectangle<float>(meterColumn.getX(), figureTop,
-                                                meterColumn.getWidth(), plotHeight).toNearestInt());
-    bandPlotComponent.setBounds(juce::Rectangle<float>(inner.getX(), figureTop,
-                                                       inner.getWidth(), plotHeight)
+    // the figure cards are drawn inside their own bounds, so their rectangles
+    // have to be pushed up by that inset: the top edges of the spectrum and the
+    // meters then sit exactly on the row the switches end on, with no seam
+    const auto cardInset = [fontSize](float blurRadius) {
+        const auto cornerSize = fontSize * .5f;
+        const auto radius = juce::jmax(std::round(cornerSize * blurRadius * 1.5f), 1.f);
+        return radius + 1.42f * cornerSize;
+    };
+    const auto plotInset = cardInset(.5f);
+    const auto meterInset = cardInset(.25f);
+    meterPanel.setBounds(juce::Rectangle<float>(meterColumn.getX(), figureTop - meterInset,
+                                                meterColumn.getWidth(), plotHeight + meterInset)
+                                 .toNearestInt());
+    bandPlotComponent.setBounds(juce::Rectangle<float>(inner.getX(), figureTop - plotInset,
+                                                       inner.getWidth(), plotHeight + plotInset)
                                         .reduced(fontSize * .2f, 0.f).toNearestInt());
 
     auto bandBound = inner.removeFromBottom(stripHeight);
