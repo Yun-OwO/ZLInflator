@@ -58,6 +58,17 @@ namespace zlinterface {
             nameLookAndFeel.setEditable(f);
         }
 
+        /** Draws this text on the button instead of the ON/OFF pair. */
+        void setCaption(const juce::String &text) {
+            myLookAndFeel.setCaption(text);
+            button.repaint();
+        }
+
+        void setCaptionFontSize(float size) {
+            myLookAndFeel.setCaptionFontSize(size);
+            button.repaint();
+        }
+
     private:
         ButtonLookAndFeel myLookAndFeel;
         NameLookAndFeel nameLookAndFeel;

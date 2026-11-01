@@ -61,9 +61,9 @@ namespace zlstate {
     public:
         auto static constexpr ID = "window_w";
         auto static constexpr name = "NA";
-        inline static const int minV = 360;
-        inline static const int maxV = 3600;
-        inline static const int defaultV = 511;
+        inline static const int minV = 720;
+        inline static const int maxV = 1800;
+        inline static const int defaultV = 940;
         inline auto static const range =
                 juce::NormalisableRange<float>(minV, maxV, 1.f);
     };
@@ -72,9 +72,9 @@ namespace zlstate {
     public:
         auto static constexpr ID = "window_h";
         auto static constexpr name = "NA";
-        inline static const int minV = 150;
-        inline static const int maxV = 1500;
-        inline static const int defaultV = 213;
+        inline static const int minV = 400;
+        inline static const int maxV = 960;
+        inline static const int defaultV = 520;
         inline auto static const range =
                 juce::NormalisableRange<float>(minV, maxV, 1.f);
     };
@@ -113,10 +113,18 @@ namespace zlstate {
         }
     };
 
+    class uiFooter : public BoolParameters<uiFooter> {
+    public:
+        auto static constexpr ID = "ui_footer";
+        auto static constexpr name = "NA";
+        auto static constexpr defaultV = false;
+    };
+
     inline juce::AudioProcessorValueTreeState::ParameterLayout getParameterLayout() {
         juce::AudioProcessorValueTreeState::ParameterLayout layout;
         layout.add(uiStyle::get(false),
-                   windowW::get(false), windowH::get(false));
+                   windowW::get(false), windowH::get(false),
+                   uiFooter::get(false));
         return layout;
     }
 }

@@ -1,6 +1,7 @@
 /*
 ==============================================================================
 Copyright (C) 2023 - zsliu98
+
 This file is part of ZLInflator
 
 ZLInflator is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
@@ -14,9 +15,11 @@ You should have received a copy of the GNU General Public License along with ZLI
 
 #include "DSP/dsp_defines.h"
 #include "DSP/MeterSource.h"
+#include "DSP/SpectrumSource.h"
 #include "DSP/WaveShaper.h"
 #include "GUI/interface_definitions.h"
 #include "State/dummy_processor.h"
+#include "State/property.h"
 #include "State/state_definitions.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>
@@ -94,7 +97,10 @@ public:
 
     MeterSource<float> *getOutputMeterSource();
 
-    shaper::ShaperMixer<float> *getShaperMixer();
+    SpectrumSource<float> *getSpectrumSource();
+
+    /** the shaper of one band, bands are ordered low, mid, high */
+    shaper::BandShaper<float> *getBandShaper(size_t band);
 
     void parameterChanged(const juce::String &parameterID, float newValue) override;
 
@@ -102,12 +108,17 @@ private:
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ZLInflatorAudioProcessor)
 
+    juce::dsp::Gain<float> inGain, outGain;
+    MeterSource<float> meterIn, meterOut;
+    SpectrumSource<float> spectrum;
+    WaveShaper<float> waveShaper;
+    WaveShaperAttach<float> waveShaperAttach;
+    zlstate::Property property;
+
     /** pushes the current parameter values into the DSP, so that it never
         depends on the order in which the host restores the state. */
     void applyAllParameters();
 
-    juce::dsp::Gain<float> inGain, outGain;
-    MeterSource<float> meterIn, meterOut;
-    WaveShaper<float> waveShaper;
-    WaveShaperAttach<float> waveShaperAttach;
+    /** presets written by the two shaper layout only know curve1/style1 */
+    void migrateLegacyParameters(juce::ValueTree paraState);
 };

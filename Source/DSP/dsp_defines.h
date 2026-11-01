@@ -205,13 +205,78 @@ namespace zldsp {
         int static constexpr defaultI = 1;
     };
 
+    // one shaper per band
+    class styleLow : public ChoiceParameters<styleLow> {
+    public:
+        auto static constexpr ID = "style_low";
+        auto static constexpr name = "Low Style";
+        inline auto static const choices = juce::StringArray{"Identity", "Quadratic", "Cubic", "Quartic", "SinMOD"};
+        int static constexpr defaultI = 3;
+    };
+
+    class curveLow : public FloatParameters<curveLow> {
+    public:
+        auto static constexpr ID = "curve_low";
+        auto static constexpr name = "Low Curve (%)";
+        inline auto static const range = juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f);
+        auto static constexpr defaultV = 25.0f;
+        static float formatV(float v) {
+            return v / 100.f;
+        }
+    };
+
+    class styleMid : public ChoiceParameters<styleMid> {
+    public:
+        auto static constexpr ID = "style_mid";
+        auto static constexpr name = "Mid Style";
+        inline auto static const choices = juce::StringArray{"Identity", "Quadratic", "Cubic", "Quartic", "SinMOD"};
+        int static constexpr defaultI = 3;
+    };
+
+    class curveMid : public FloatParameters<curveMid> {
+    public:
+        auto static constexpr ID = "curve_mid";
+        auto static constexpr name = "Mid Curve (%)";
+        inline auto static const range = juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f);
+        auto static constexpr defaultV = 25.0f;
+        static float formatV(float v) {
+            return v / 100.f;
+        }
+    };
+
+    class styleHigh : public ChoiceParameters<styleHigh> {
+    public:
+        auto static constexpr ID = "style_high";
+        auto static constexpr name = "High Style";
+        inline auto static const choices = juce::StringArray{"Identity", "Quadratic", "Cubic", "Quartic", "SinMOD"};
+        int static constexpr defaultI = 3;
+    };
+
+    class curveHigh : public FloatParameters<curveHigh> {
+    public:
+        auto static constexpr ID = "curve_high";
+        auto static constexpr name = "High Curve (%)";
+        inline auto static const range = juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f);
+        auto static constexpr defaultV = 25.0f;
+        static float formatV(float v) {
+            return v / 100.f;
+        }
+    };
+
     inline juce::AudioProcessorValueTreeState::ParameterLayout getParameterLayout() {
         juce::AudioProcessorValueTreeState::ParameterLayout layout;
+        // the parameters of the two shaper mixer are kept at their former
+        // positions so that presets keep resolving, but they are neither
+        // automated nor used by the DSP anymore: every band has its own
+        // style/curve pair now
         layout.add(inputGain::get(), outputGain::get(), wet::get(),
-                   curve1::get(), curve2::get(), weight::get(),
+                   curve1::get(false), curve2::get(false), weight::get(false),
                    lowSplit::get(), highSplit::get(),
-                   effectIn::get(), bandSplit::get(), autoGain::get(),
-                   overSample::get(), style1::get(), style2::get());
+                   effectIn::get(), bandSplit::get(false), autoGain::get(),
+                   overSample::get(), style1::get(false), style2::get(false),
+                   styleLow::get(), curveLow::get(),
+                   styleMid::get(), curveMid::get(),
+                   styleHigh::get(), curveHigh::get());
         return layout;
     }
 }

@@ -29,6 +29,21 @@ namespace zlinterface {
             // draw button
             bounds = uiBase->fillRoundedShadowRectangle(g, bounds, uiBase->getFontSize() * 0.5f, {});
             uiBase->fillRoundedInnerShadowRectangle(g, bounds, uiBase->getFontSize() * 0.5f, {.blurRadius=0.45f, .flip=true});
+            // a caption replaces the ON/OFF pair for buttons that carry their own text
+            if (caption.isNotEmpty()) {
+                g.setColour(editable.load() ? uiBase->getTextColor() : uiBase->getTextInactiveColor());
+                g.setFont(captionFontSize > 0.f ? captionFontSize : bounds.getHeight() * 0.34f);
+                auto textWidth = g.getCurrentFont().getStringWidthFloat(caption);
+                if (textWidth > bounds.getWidth() * 0.86f && textWidth > 0) {
+                    g.setFont(g.getCurrentFont().withHeight(g.getCurrentFont().getHeight()
+                                                            * bounds.getWidth() * 0.86f / textWidth));
+                }
+                g.drawSingleLineText(caption,
+                                     juce::roundToInt(bounds.getCentre().x),
+                                     juce::roundToInt(bounds.getCentre().y + g.getCurrentFont().getDescent()),
+                                     juce::Justification::horizontallyCentred);
+                return;
+            }
             // draw ON/OFF
             if (editable.load()) {
                 g.setColour(uiBase->getTextColor());
@@ -74,8 +89,19 @@ namespace zlinterface {
             editable.store(f);
         }
 
+        void setCaption(const juce::String &text) {
+            caption = text;
+        }
+
+        /** Zero picks a size from the button height. */
+        void setCaptionFontSize(float size) {
+            captionFontSize = size;
+        }
+
     private:
         std::atomic<bool> editable = true;
+        juce::String caption;
+        float captionFontSize = 0.f;
 
         UIBase *uiBase;
     };

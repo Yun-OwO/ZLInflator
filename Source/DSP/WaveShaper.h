@@ -20,48 +20,6 @@ You should have received a copy of the GNU General Public License along with ZLI
 #include "ShaperFunctions.h"
 
 template<typename FloatType>
-class WaveHelper {
-public:
-    WaveHelper() {
-        setWet(static_cast<FloatType>(zldsp::wet::formatV(zldsp::wet::defaultV)));
-    }
-
-    void setWet(FloatType wet) {
-        m_wet = wet;
-        m_dry = static_cast<FloatType>(1) - wet;
-    }
-
-    void setShapes(FloatType curve1, FloatType curve2, FloatType weight, bool compensation) {
-        shaperMixer.setShapes(curve1, curve2, weight, compensation);
-    }
-
-    void setTypes(size_t type1, size_t type2) {
-        shaperMixer.setTypes(type1, type2);
-    }
-
-    FloatType operator()(FloatType x) const { return shape(x); }
-
-    shaper::ShaperMixer<FloatType> *getShaper() { return &shaperMixer; }
-
-private:
-    static constexpr FloatType clip = static_cast<FloatType>(1);
-    std::atomic<FloatType> m_wet, m_dry;
-    shaper::ShaperMixer<FloatType> shaperMixer;
-
-    static FloatType sgn(FloatType x) {
-        if (x > 0) {
-            return static_cast<FloatType>(1);
-        } else {
-            return static_cast<FloatType>(-1);
-        }
-    }
-
-    FloatType shape(FloatType x) const {
-        return shaperMixer(juce::jmin(static_cast<FloatType>(1), std::abs(x))) * m_wet * sgn(x) + x * m_dry;
-    }
-};
-
-template<typename FloatType>
 class LRFilters {
 public:
     LRFilters() {
@@ -140,14 +98,23 @@ public:
         filters[1].setCutoffFrequency(zldsp::highSplit::defaultV);
     }
 
-    shaper::ShaperMixer<FloatType> *getShaper() { return helper.getShaper(); }
-
-    void setWet(FloatType wet) {
-        helper.setWet(wet);
+    /** the shaper of one band, bands are ordered low, mid, high */
+    shaper::BandShaper<FloatType> *getBandShaper(size_t band) {
+        return &bandShapers[juce::jmin(band, static_cast<size_t>(numBands) - 1)];
     }
 
-    void setShapes(FloatType curve1, FloatType curve2, FloatType weight, bool compensation) {
-        helper.setShapes(curve1, curve2, weight, compensation);
+    void setWet(FloatType wet) {
+        m_wet.store(wet);
+        m_dry.store(static_cast<FloatType>(1) - wet);
+    }
+
+    void setBandCurve(size_t band, FloatType curve, bool compensation) {
+        bandShapers[juce::jmin(band, static_cast<size_t>(numBands) - 1)]
+                .setParameters(curve, compensation);
+    }
+
+    void setBandType(size_t band, size_t type) {
+        bandShapers[juce::jmin(band, static_cast<size_t>(numBands) - 1)].setType(type);
     }
 
     void setCutoffFrequency(FloatType lowFreq, FloatType highFreq) {
@@ -157,11 +124,7 @@ public:
     }
 
     void setEffectFlag(bool effectFlag) {
-        effect = effectFlag;
-    }
-
-    void setSplitFlag(bool splitFlag) {
-        split = splitFlag;
+        effect.store(effectFlag);
     }
 
     void setOverSampleFactor(int overSampleFactor) {
@@ -170,10 +133,6 @@ public:
         // over samplers yet (hosts are allowed to restore the state first)
         idxSampler = static_cast<size_t>(juce::jlimit(0, numSamplers - 1, overSampleFactor));
         applyOverSampleSettings();
-    }
-
-    void setTypes(size_t type1, size_t type2) {
-        helper.setTypes(type1, type2);
     }
 
     void reset() noexcept {
@@ -186,10 +145,8 @@ public:
         }
     }
 
-    template<typename SampleType>
-    SampleType JUCE_VECTOR_CALLTYPE
-    processSample(SampleType s) noexcept {
-        return helper(s);
+    bool isPrepared() const noexcept {
+        return overSamplers[idxSampler] != nullptr;
     }
 
     //==============================================================================
@@ -197,68 +154,65 @@ public:
     void process(const ProcessContext &context) noexcept {
         const auto numSamples = context.getInputBlock().getNumSamples();
         const auto numChannels = context.getInputBlock().getNumChannels();
-        if (context.isBypassed) {
+        const auto copyInputToOutput = [&context]() {
             if (context.usesSeparateInputAndOutputBlocks())
                 context.getOutputBlock().copyFrom(context.getInputBlock());
-        } else {
-            if (overSamplers[idxSampler] == nullptr) {
-                // process() should only run after prepare(), but never crash if
-                // it does
-                if (context.usesSeparateInputAndOutputBlocks())
-                    context.getOutputBlock().copyFrom(context.getInputBlock());
-                return;
+        };
+        if (context.isBypassed || overSamplers[idxSampler] == nullptr) {
+            // process() should only run after prepare(), but never crash if it
+            // does
+            copyInputToOutput();
+            return;
+        }
+        auto oversampled_block =
+                overSamplers[idxSampler]->processSamplesUp(context.getInputBlock());
+        auto oversampled_context =
+                juce::dsp::ProcessContextReplacing<FloatType>(oversampled_block);
+        {
+            auto sepBlock =
+                    juce::dsp::AudioBlock<FloatType>(bufferSeparation)
+                            .getSubBlock(0, static_cast<size_t> (
+                                    (static_cast<size_t>(1) << idxSampler.load()) *
+                                    static_cast<size_t>(numSamples)));
+            juce::dsp::AudioBlock<FloatType> blocks[numBands];
+            std::vector<juce::dsp::ProcessContextReplacing<FloatType>> contexts;
+            for (size_t i = 0; i < numBands; ++i) {
+                blocks[i] = sepBlock.getSubsetChannelBlock(i * numChannels,
+                                                           (size_t) numChannels);
+                blocks[i].copyFrom(oversampled_context.getInputBlock());
+                contexts.push_back(
+                        juce::dsp::ProcessContextReplacing<FloatType>(blocks[i]));
             }
-            auto oversampled_block =
-                    overSamplers[idxSampler]->processSamplesUp(context.getInputBlock());
-            auto oversampled_context =
-                    juce::dsp::ProcessContextReplacing<FloatType>(oversampled_block);
-            if (split) {
-                auto sepBlock =
-                        juce::dsp::AudioBlock<FloatType>(bufferSeparation)
-                                .getSubBlock(0, static_cast<size_t> (
-                                        std::pow(FloatType(2), static_cast<FloatType>(idxSampler)) *
-                                        static_cast<FloatType>(numSamples)));
-                juce::dsp::AudioBlock<FloatType> blocks[numBands];
-                std::vector<juce::dsp::ProcessContextReplacing<FloatType>> contexts;
+
+            // low / mid / high split, every band keeps its own shaper
+            filters[0].processLow(contexts[0]);
+            filters[1].processAll(contexts[0]);
+
+            filters[0].processHigh(contexts[1]);
+            contexts[2].getOutputBlock().copyFrom(contexts[1].getOutputBlock());
+
+            filters[1].processLow(contexts[1]);
+            filters[1].processHigh(contexts[2]);
+
+            if (effect.load()) {
+                const auto wet = m_wet.load();
+                const auto dry = m_dry.load();
                 for (size_t i = 0; i < numBands; ++i) {
-                    blocks[i] = sepBlock.getSubsetChannelBlock(i * numChannels,
-                                                               (size_t) numChannels);
-                    blocks[i].copyFrom(oversampled_context.getInputBlock());
-                    contexts.push_back(
-                            juce::dsp::ProcessContextReplacing<FloatType>(blocks[i]));
+                    const auto *bandShaper = &bandShapers[i];
+                    juce::dsp::AudioBlock<FloatType>::process(
+                            contexts[i].getInputBlock(), contexts[i].getOutputBlock(),
+                            [bandShaper, wet, dry](FloatType x) {
+                                return shape(*bandShaper, x, wet, dry);
+                            });
                 }
-
-                filters[0].processLow(contexts[0]);
-                filters[1].processAll(contexts[0]);
-
-                filters[0].processHigh(contexts[1]);
-                contexts[2].getOutputBlock().copyFrom(contexts[1].getOutputBlock());
-
-                filters[1].processLow(contexts[1]);
-                filters[1].processHigh(contexts[2]);
-
-                if (effect.load()) {
-                    for (size_t i = 0; i < numBands; ++i) {
-                        juce::dsp::AudioBlock<FloatType>::process(
-                                contexts[i].getInputBlock(), contexts[i].getOutputBlock(),
-                                helper);
-                    }
-                }
-
                 for (size_t i = 1; i < numBands; ++i) {
                     blocks[0].add(blocks[i]);
                 }
-
-                oversampled_context.getOutputBlock().copyFrom(blocks[0]);
-            } else {
-                if (effect.load()) {
-                    juce::dsp::AudioBlock<FloatType>::process(
-                            oversampled_context.getInputBlock(),
-                            oversampled_context.getOutputBlock(), helper);
-                }
             }
-            overSamplers[idxSampler]->processSamplesDown(context.getOutputBlock());
+
+            oversampled_context.getOutputBlock().copyFrom(blocks[0]);
         }
+        overSamplers[idxSampler]->processSamplesDown(context.getOutputBlock());
     }
 
     void prepare(const juce::dsp::ProcessSpec &spec) {
@@ -296,14 +250,25 @@ private:
                 static_cast<int>(overSamplers[idxSampler]->getLatencyInSamples()));
     }
 
+    /** the odd symmetric transfer function of one band: the shaper only sees
+        -1..1, and the dry signal is blended back in. */
+    static FloatType shape(const shaper::BandShaper<FloatType> &bandShaper, FloatType x,
+                           FloatType wet, FloatType dry) {
+        const auto sgn = x > 0 ? static_cast<FloatType>(1) : static_cast<FloatType>(-1);
+        return bandShaper(juce::jmin(static_cast<FloatType>(1), std::abs(x))) * wet * sgn + x * dry;
+    }
+
     juce::AudioProcessor *processorRef;
     constexpr static const int numSamplers = 5, numBands = 3;
     std::atomic<double> sampleRate;
-    WaveHelper<FloatType> helper;
+    std::array<shaper::BandShaper<FloatType>, numBands> bandShapers;
+    std::atomic<FloatType> m_wet = static_cast<FloatType>(zldsp::wet::formatV(zldsp::wet::defaultV));
+    std::atomic<FloatType> m_dry = static_cast<FloatType>(1) -
+                                   static_cast<FloatType>(zldsp::wet::formatV(zldsp::wet::defaultV));
     std::array<std::unique_ptr<juce::dsp::Oversampling<FloatType>>, numSamplers>
             overSamplers{};
     std::atomic<size_t> idxSampler = zldsp::overSample::defaultI;
-    std::atomic<bool> split = zldsp::bandSplit::defaultV, effect = zldsp::effectIn::defaultV;
+    std::atomic<bool> effect = zldsp::effectIn::defaultV;
     std::array<LRFilters<FloatType>, numBands - 1> filters{};
     juce::AudioBuffer<FloatType> bufferSeparation;
 };
@@ -317,10 +282,11 @@ public:
     }
 
     static constexpr std::array<const char *, 12> getIDs() {
-        return {zldsp::effectIn::ID, zldsp::style1::ID, zldsp::style2::ID,
-                zldsp::wet::ID, zldsp::curve1::ID, zldsp::curve2::ID, zldsp::weight::ID,
-                zldsp::bandSplit::ID, zldsp::lowSplit::ID, zldsp::highSplit::ID,
-                zldsp::overSample::ID, zldsp::autoGain::ID};
+        return {zldsp::effectIn::ID, zldsp::wet::ID, zldsp::autoGain::ID,
+                zldsp::lowSplit::ID, zldsp::highSplit::ID, zldsp::overSample::ID,
+                zldsp::styleLow::ID, zldsp::curveLow::ID,
+                zldsp::styleMid::ID, zldsp::curveMid::ID,
+                zldsp::styleHigh::ID, zldsp::curveHigh::ID};
     }
 
     void addListeners() {
@@ -343,25 +309,16 @@ public:
     void parameterChanged(const juce::String &parameterID, float newValue) override {
         if (parameterID == zldsp::wet::ID) {
             waveShaper->setWet(static_cast<FloatType>(newValue) / static_cast<FloatType>(100));
-        } else if (parameterID == zldsp::curve1::ID || parameterID == zldsp::curve2::ID ||
-                   parameterID == zldsp::weight::ID || parameterID == zldsp::autoGain::ID) {
-            auto curve1 = loadValue(zldsp::curve1::ID);
-            auto curve2 = loadValue(zldsp::curve2::ID);
-            auto weight = loadValue(zldsp::weight::ID);
-            auto compensation = loadValue(zldsp::autoGain::ID) > 0.5f;
-            if (parameterID == zldsp::curve1::ID) {
-                curve1 = newValue;
-            } else if (parameterID == zldsp::curve2::ID) {
-                curve2 = newValue;
-            } else if (parameterID == zldsp::weight::ID) {
-                weight = newValue;
-            } else {
-                compensation = newValue > 0.5f;
+        } else if (parameterID == zldsp::autoGain::ID || parameterID == zldsp::curveLow::ID ||
+                   parameterID == zldsp::curveMid::ID || parameterID == zldsp::curveHigh::ID) {
+            const auto compensation = loadValue(zldsp::autoGain::ID) > 0.5f;
+            const auto curves = std::array<float, 3>{loadValue(zldsp::curveLow::ID),
+                                                     loadValue(zldsp::curveMid::ID),
+                                                     loadValue(zldsp::curveHigh::ID)};
+            for (size_t i = 0; i < curves.size(); ++i) {
+                waveShaper->setBandCurve(i, static_cast<FloatType>(curves[i]) /
+                                            static_cast<FloatType>(100), compensation);
             }
-            waveShaper->setShapes(static_cast<FloatType>(zldsp::curve1::formatV(curve1)),
-                                  static_cast<FloatType>(zldsp::curve2::formatV(curve2)),
-                                  static_cast<FloatType>(zldsp::weight::formatV(weight)),
-                                  compensation);
         } else if (parameterID == zldsp::lowSplit::ID || parameterID == zldsp::highSplit::ID) {
             auto lowSplit = loadValue(zldsp::lowSplit::ID);
             auto highSplit = loadValue(zldsp::highSplit::ID);
@@ -371,19 +328,17 @@ public:
                 highSplit = newValue;
             }
             waveShaper->setCutoffFrequency(lowSplit, highSplit);
-        } else if (parameterID == zldsp::bandSplit::ID) {
-            waveShaper->setSplitFlag(newValue > 0.5f);
         } else if (parameterID == zldsp::effectIn::ID) {
             waveShaper->setEffectFlag(newValue > 0.5f);
-        } else if (parameterID == zldsp::style1::ID || parameterID == zldsp::style2::ID) {
-            auto type1 = loadValue(zldsp::style1::ID);
-            auto type2 = loadValue(zldsp::style2::ID);
-            if (parameterID == zldsp::style1::ID) {
-                type1 = newValue;
-            } else {
-                type2 = newValue;
+        } else if (parameterID == zldsp::styleLow::ID || parameterID == zldsp::styleMid::ID ||
+                   parameterID == zldsp::styleHigh::ID) {
+            size_t band = 0;
+            if (parameterID == zldsp::styleMid::ID) {
+                band = 1;
+            } else if (parameterID == zldsp::styleHigh::ID) {
+                band = 2;
             }
-            waveShaper->setTypes(static_cast<size_t>(type1), static_cast<size_t>(type2));
+            waveShaper->setBandType(band, static_cast<size_t>(newValue));
         } else if (parameterID == zldsp::overSample::ID) {
             waveShaper->setOverSampleFactor(static_cast<int>(newValue));
         }
@@ -403,4 +358,4 @@ private:
     juce::AudioProcessorValueTreeState *apvts;
 };
 
-#endif
+#endif

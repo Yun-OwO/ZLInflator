@@ -29,13 +29,20 @@ namespace zlinterface {
             }
             auto labelArea{label.getLocalBounds().toFloat()};
             auto center = labelArea.getCentre();
-            if (uiBase->getFontSize() > 0) {
-                g.setFont(uiBase->getFontSize());
-            } else {
-                g.setFont(labelArea.getHeight() * 0.6f);
+            float labelFontSize = uiBase->getFontSize();
+            if (labelFontSize <= 0) {
+                labelFontSize = labelArea.getHeight() * 0.6f;
+            }
+            g.setFont(juce::Font(labelFontSize));
+            const juce::String text{label.getText()};
+            // shrink the text instead of cutting it off
+            auto textWidth = g.getCurrentFont().getStringWidthFloat(text);
+            if (textWidth > labelArea.getWidth() * 0.96f && textWidth > 0) {
+                const auto scale = labelArea.getWidth() * 0.96f / textWidth;
+                g.setFont(juce::Font(labelFontSize * scale));
             }
             g.drawSingleLineText(
-                    juce::String(label.getText()),
+                    text,
                     juce::roundToInt(center.x + g.getCurrentFont().getHorizontalScale()),
                     juce::roundToInt(center.y + g.getCurrentFont().getDescent()),
                     juce::Justification::horizontallyCentred);

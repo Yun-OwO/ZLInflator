@@ -53,12 +53,17 @@ namespace zlinterface {
             }
             auto labelArea = label.getLocalBounds().toFloat();
             auto center = labelArea.getCentre();
-            if (uiBase->getFontSize() > 0) {
-                g.setFont(uiBase->getFontSize() * FontLarge);
-            } else {
-                g.setFont(labelArea.getHeight() * 0.6f);
+            float labelFontSize = uiBase->getFontSize() > 0 ? uiBase->getFontSize() * FontLarge
+                                                            : labelArea.getHeight() * 0.6f;
+            g.setFont(juce::Font(labelFontSize));
+            const juce::String text{label.getText()};
+            // the text sits inside the rounded box, shrink it if it would not fit
+            auto textWidth = g.getCurrentFont().getStringWidthFloat(text);
+            if (textWidth > labelArea.getWidth() * 0.9f && textWidth > 0) {
+                const auto scale = labelArea.getWidth() * 0.9f / textWidth;
+                g.setFont(juce::Font(labelFontSize * scale));
             }
-            g.drawSingleLineText(juce::String(label.getText()),
+            g.drawSingleLineText(text,
                                  juce::roundToInt(center.x + g.getCurrentFont().getHorizontalScale()),
                                  juce::roundToInt(center.y + g.getCurrentFont().getDescent()),
                                  juce::Justification::horizontallyCentred);

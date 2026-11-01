@@ -94,11 +94,10 @@ namespace zlinterface {
             }
             auto labelArea{label.getLocalBounds().toFloat()};
             auto center = labelArea.getCentre();
-            if (uiBase->getFontSize() > 0) {
-                g.setFont(uiBase->getFontSize() * FontHuge);
-            } else {
-                g.setFont(labelArea.getHeight() * 0.6f);
-            }
+            float labelFontSize = uiBase->getFontSize() > 0
+                                  ? uiBase->getFontSize() * FontHuge
+                                  : labelArea.getHeight() * 0.6f;
+            g.setFont(juce::Font(labelFontSize));
             float value = label.getText().getFloatValue();
             juce::String labelToDisplay = juce::String(label.getText()).substring(0, 4);
             if (value < 10000 && labelToDisplay.contains(".")) {
@@ -107,6 +106,12 @@ namespace zlinterface {
             if (value > 10000) {
                 value = value / 1000;
                 labelToDisplay = juce::String(value).substring(0, 4) + "K";
+            }
+            // shrink the text instead of cutting it off
+            auto textWidth = g.getCurrentFont().getStringWidthFloat(labelToDisplay);
+            if (textWidth > labelArea.getWidth() && textWidth > 0) {
+                const auto scale = labelArea.getWidth() / textWidth;
+                g.setFont(juce::Font(labelFontSize * scale));
             }
             g.drawSingleLineText(labelToDisplay,
                                  juce::roundToInt(center.x + g.getCurrentFont().getHorizontalScale()),

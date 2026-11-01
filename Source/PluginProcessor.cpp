@@ -1,6 +1,7 @@
 /*
 ==============================================================================
 Copyright (C) 2023 - zsliu98
+
 This file is part of ZLInflator
 
 ZLInflator is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
@@ -30,7 +31,8 @@ ZLInflatorAudioProcessor::ZLInflatorAudioProcessor()
           parameters(*this, nullptr, juce::Identifier("ZLInflatorParameters"), zldsp::getParameterLayout()),
           states(dummyProcessor, nullptr, juce::Identifier("ZLInflatorStates"), zlstate::getParameterLayout()),
           waveShaper(*this),
-          waveShaperAttach(waveShaper, parameters) {
+          waveShaperAttach(waveShaper, parameters),
+          property(states) {
     inGain.setGainDecibels(zldsp::inputGain::defaultV);
     outGain.setGainDecibels(zldsp::outputGain::defaultV);
     parameters.addParameterListener(zldsp::inputGain::ID, this);
@@ -38,7 +40,13 @@ ZLInflatorAudioProcessor::ZLInflatorAudioProcessor()
     waveShaperAttach.addListeners();
 }
 
-ZLInflatorAudioProcessor::~ZLInflatorAudioProcessor() = default;
+ZLInflatorAudioProcessor::~ZLInflatorAudioProcessor() {
+    parameters.removeParameterListener(zldsp::inputGain::ID, this);
+    parameters.removeParameterListener(zldsp::outputGain::ID, this);
+    // the ui state (window size, style, footer) lives on the processor now, so it
+    // is written back even when the host never opens the editor
+    property.saveAPVTS(states);
+}
 
 //==============================================================================
 const juce::String ZLInflatorAudioProcessor::getName() const {
@@ -104,6 +112,7 @@ void ZLInflatorAudioProcessor::prepareToPlay(double sampleRate,
     outGain.prepare(spec);
     meterIn.prepare(spec);
     meterOut.prepare(spec);
+    spectrum.prepare(sampleRate);
     waveShaper.prepare(spec);
     // the DSP is only updated through parameter listeners, and hosts may
     // restore the state before prepareToPlay() is called
@@ -115,6 +124,7 @@ void ZLInflatorAudioProcessor::reset() {
     outGain.reset();
     meterIn.reset();
     meterOut.reset();
+    spectrum.reset();
     waveShaper.reset();
 }
 
@@ -139,20 +149,30 @@ bool ZLInflatorAudioProcessor::isBusesLayoutSupported(
 
 void ZLInflatorAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
                                             juce::MidiBuffer &midiMessages) {
-    juce::ScopedNoDenormals noDenormals;
     juce::ignoreUnused(midiMessages);
-    auto totalNumInputChannels = getTotalNumInputChannels();
-    auto totalNumOutputChannels = getTotalNumOutputChannels();
-
-    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
-        buffer.clear(i, 0, buffer.getNumSamples());
-
     juce::dsp::AudioBlock<float> block(buffer);
-    inGain.process(juce::dsp::ProcessContextReplacing<float>(block));
-    meterIn.process(juce::dsp::ProcessContextReplacing<float>(block));
-    waveShaper.process(juce::dsp::ProcessContextReplacing<float>(block));
-    outGain.process(juce::dsp::ProcessContextReplacing<float>(block));
-    meterOut.process(juce::dsp::ProcessContextReplacing<float>(block));
+    process(juce::dsp::ProcessContextReplacing<float>(block));
+}
+
+void ZLInflatorAudioProcessor::process(juce::dsp::ProcessContextReplacing<float> context) {
+    juce::ScopedNoDenormals noDenormals;
+    auto &block = context.getOutputBlock();
+    if (block.getNumChannels() == 0 || block.getNumSamples() == 0) {
+        return;
+    }
+    const auto totalNumInputChannels = getTotalNumInputChannels();
+    const auto totalNumOutputChannels = getTotalNumOutputChannels();
+
+    for (int i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
+        block.getSubsetChannelBlock(static_cast<size_t>(i), 1).clear();
+
+    inGain.process(context);
+    meterIn.process(context);
+    waveShaper.process(context);
+    outGain.process(context);
+    meterOut.process(context);
+    // the spectrum should show what the plugin actually outputs
+    spectrum.process(context);
 }
 
 //==============================================================================
@@ -170,6 +190,9 @@ void ZLInflatorAudioProcessor::getStateInformation(
         juce::MemoryBlock &destData) {
     auto tempTree = juce::ValueTree("ZLInflatorParaState");
     tempTree.appendChild(parameters.copyState(), nullptr);
+    // the ui state travels with the preset as well, while ui.xml keeps the last
+    // used size/style for a freshly inserted instance
+    tempTree.appendChild(states.copyState(), nullptr);
     std::unique_ptr<juce::XmlElement> xml(tempTree.createXml());
     copyXmlToBinary(*xml, destData);
 }
@@ -179,11 +202,15 @@ void ZLInflatorAudioProcessor::setStateInformation(const void *data,
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
     if (xmlState != nullptr && xmlState->hasTagName("ZLInflatorParaState")) {
         auto tempTree = juce::ValueTree::fromXml(*xmlState);
-        auto paraState = tempTree.getChildWithName(parameters.state.getType());
+        auto paraState = tempTree.getChildWithName(parameters.state.getType()).createCopy();
         if (!paraState.isValid()) {
             return;
         }
+        migrateLegacyParameters(paraState);
         parameters.replaceState(paraState);
+        if (auto uiState = tempTree.getChildWithName(states.state.getType()); uiState.isValid()) {
+            states.replaceState(uiState);
+        }
         // the host is free to restore the state before prepareToPlay(), and an
         // empty state would leave the DSP on its own defaults
         applyAllParameters();
@@ -204,8 +231,12 @@ MeterSource<float> *ZLInflatorAudioProcessor::getOutputMeterSource() {
     return &meterOut;
 }
 
-shaper::ShaperMixer<float> *ZLInflatorAudioProcessor::getShaperMixer() {
-    return waveShaper.getShaper();
+SpectrumSource<float> *ZLInflatorAudioProcessor::getSpectrumSource() {
+    return &spectrum;
+}
+
+shaper::BandShaper<float> *ZLInflatorAudioProcessor::getBandShaper(size_t band) {
+    return waveShaper.getBandShaper(band);
 }
 
 void ZLInflatorAudioProcessor::parameterChanged(const juce::String &parameterID, float newValue) {
@@ -224,4 +255,47 @@ void ZLInflatorAudioProcessor::applyAllParameters() {
         parameterChanged(zldsp::outputGain::ID, value->load());
     }
     waveShaperAttach.applyAllParameters();
+}
+
+void ZLInflatorAudioProcessor::migrateLegacyParameters(juce::ValueTree paraState) {
+    const auto findChild = [&paraState](const char *id) {
+        for (const auto child: paraState) {
+            if (child.getProperty(juce::Identifier("id")).toString() == id) {
+                return child;
+            }
+        }
+        return juce::ValueTree();
+    };
+    const auto readValue = [](const juce::ValueTree &child, float fallback) {
+        if (!child.isValid()) {
+            return fallback;
+        }
+        const auto value = child.getProperty(juce::Identifier("value"));
+        return value.isVoid() ? fallback : static_cast<float>(value);
+    };
+    const auto writeValue = [&paraState](const char *id, float value) {
+        for (const auto child: paraState) {
+            if (child.getProperty(juce::Identifier("id")).toString() == id) {
+                return;
+            }
+        }
+        juce::ValueTree child(juce::Identifier("PARAM"));
+        child.setProperty(juce::Identifier("id"), juce::String(id), nullptr);
+        child.setProperty(juce::Identifier("value"), value, nullptr);
+        paraState.appendChild(child, nullptr);
+    };
+
+    // presets written by the two shaper layout have no per band children: give
+    // every band the curve and the style that used to be shared
+    const auto curve = readValue(findChild(zldsp::curve1::ID), zldsp::curveLow::defaultV);
+    const auto style = readValue(findChild(zldsp::style1::ID),
+                                 static_cast<float>(zldsp::styleLow::defaultI));
+    const std::array<std::pair<const char *, const char *>, 3> bands{{
+            {zldsp::curveLow::ID, zldsp::styleLow::ID},
+            {zldsp::curveMid::ID, zldsp::styleMid::ID},
+            {zldsp::curveHigh::ID, zldsp::styleHigh::ID}}};
+    for (const auto &band: bands) {
+        writeValue(band.first, curve);
+        writeValue(band.second, style);
+    }
 }

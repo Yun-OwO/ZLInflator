@@ -184,48 +184,49 @@ namespace shaper {
         }
     }
 
+    /** the shaper of one frequency band: the curve is shared by every type,
+        while the type itself can be switched on the fly. */
     template<typename FloatType>
-    class ShaperMixer {
+    class BandShaper {
     public:
-        ShaperMixer() {
+        BandShaper() {
             for (size_t i = 0; i < ShaperType::ShaperNUM; ++i) {
-                shaper1[i] = makeShaper<FloatType>(static_cast<ShaperType>(i));
-                shaper2[i] = makeShaper<FloatType>(static_cast<ShaperType>(i));
+                shapers[i] = makeShaper<FloatType>(static_cast<ShaperType>(i));
             }
-            setShapes(zldsp::curve1::formatV(zldsp::curve1::defaultV),
-                      zldsp::curve2::formatV(zldsp::curve2::defaultV),
-                      zldsp::weight::formatV(zldsp::weight::defaultV),
-                      false);
+            setParameters(static_cast<FloatType>(zldsp::curveLow::formatV(zldsp::curveLow::defaultV)), false);
         }
 
-        ~ShaperMixer() = default;
+        ~BandShaper() = default;
 
         FloatType operator()(FloatType x) const {
             return shape(x);
         }
 
-        void setShapes(FloatType curve1, FloatType curve2, FloatType weight, bool compensation) {
-            m_weight2 = weight;
-            m_weight1 = static_cast<FloatType>(1) - weight;
+        void setParameters(FloatType curve, bool compensation) {
             for (size_t i = 0; i < ShaperType::ShaperNUM; ++i) {
-                shaper1[i]->setParameters(curve1, compensation);
-                shaper2[i]->setParameters(curve2, compensation);
+                shapers[i]->setParameters(curve, compensation);
             }
         }
 
-        void setTypes(size_t type1, size_t type2) {
-            m_type1 = type1;
-            m_type2 = type2;
+        void setType(size_t type) {
+            m_type.store(type);
+        }
+
+        size_t getType() const {
+            return m_type.load();
+        }
+
+        /** read only access for the editor: the pointed shaper never moves. */
+        const Shaper<FloatType> *getActiveShaper() const {
+            return shapers[m_type.load()].get();
         }
 
     private:
-        std::array<std::unique_ptr<Shaper<FloatType>>, ShaperType::ShaperNUM> shaper1, shaper2;
-        FloatType m_weight1, m_weight2;
-        size_t m_type1 = static_cast<size_t>(zldsp::style1::defaultI);
-        size_t m_type2 = static_cast<size_t>(zldsp::style2::defaultI);
+        std::array<std::unique_ptr<Shaper<FloatType>>, ShaperType::ShaperNUM> shapers;
+        std::atomic<size_t> m_type = static_cast<size_t>(zldsp::styleLow::defaultI);
 
         FloatType shape(FloatType x) const {
-            return (*shaper1[m_type1])(x) * m_weight1 + (*shaper2[m_type2])(x) * m_weight2;
+            return (*shapers[m_type.load()])(x);
         }
     };
 } // namespace shaper
