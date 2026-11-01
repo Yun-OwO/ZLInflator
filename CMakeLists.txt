@@ -32,6 +32,7 @@ set(PROJECT_NAME "ZLInflator")
 
 # Set the plugin formats you'll be building here.
 # Valid formats: AAX Unity VST AU AUv3 Standalone
+# CLAP is not a JUCE format: it is built by clap-juce-extensions, see below
 set(FORMATS VST3 AU)
 
 # This must be set before the project() call
@@ -167,4 +168,33 @@ if (WIN32) # Can't use MSVC here, as it won't catch Clang on Windows
     else ()
         message("IPP LIBRARIES *NOT* FOUND")
     endif ()
+endif ()
+
+# CLAP is not a JUCE format, so it is built through clap-juce-extensions.
+# The option is OFF by default: it fetches extra code at configure time and
+# pluginval cannot validate CLAP yet.
+# Only the main branch can be used: the newest release tag (0.26.0, May 2022)
+# is a CLAP 0.26 era snapshot whose wrapper still overrides
+# juce::AudioPlayHead::getCurrentPosition, which is not virtual since JUCE 7.
+# main is pinned to a commit for reproducible builds; it was verified here
+# against JUCE 7.0.5 and CLAP 1.2.10.
+set(ZLINFLATOR_CLAP_JUCE_EXTENSIONS_GIT_TAG 7adee3a1bd4684d4caa5601100e364abccff4b4d)
+option(ZLINFLATOR_BUILD_CLAP "Build the CLAP format with clap-juce-extensions" OFF)
+if (ZLINFLATOR_BUILD_CLAP)
+    include(FetchContent)
+    set(CLAP_JUCE_EXTENSIONS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(clap_juce_extensions
+            GIT_REPOSITORY https://github.com/free-audio/clap-juce-extensions.git
+            GIT_TAG ${ZLINFLATOR_CLAP_JUCE_EXTENSIONS_GIT_TAG}
+            GIT_SHALLOW FALSE)
+    FetchContent_MakeAvailable(clap_juce_extensions)
+    clap_juce_extensions_plugin(TARGET "${PROJECT_NAME}"
+            CLAP_ID "com.zlaudio.zlinflator"
+            CLAP_FEATURES audio-effect distortion)
+    target_link_libraries("${PROJECT_NAME}_CLAP" PRIVATE Assets)
+    # keep the CLAP binary next to the VST3 one, so the packaging scripts find it
+    set_target_properties("${PROJECT_NAME}_CLAP" PROPERTIES
+            FOLDER "Targets"
+            XCODE_GENERATE_SCHEME ON)
+    message("CLAP BUILD ENABLED (clap-juce-extensions ${ZLINFLATOR_CLAP_JUCE_EXTENSIONS_GIT_TAG})")
 endif ()
