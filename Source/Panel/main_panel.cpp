@@ -88,22 +88,25 @@ void MainPanel::resized() {
     const auto switchHeight = juce::jmin(cellHeight, (inner.getHeight() - stripHeight) * .105f);
     const auto cellGap = fontSize * .05f;
 
-    const auto cellWidth = juce::jmin(inner.getWidth() * 0.16f, fontSize * 4.6f);
-    auto rightBound = inner.removeFromRight(cellWidth);
-    auto overSampleCell = rightBound.removeFromTop(cellHeight);
-    auto gainCell = rightBound.removeFromTop(switchHeight + cellGap);
-    auto bypassCell = rightBound.removeFromTop(switchHeight + cellGap);
+    // the right hand side is two columns: the oversampling choice with the auto
+    // gain switch under it, and the bypass switch with the meters under it
+    const auto cellWidth = juce::jmin(inner.getWidth() * 0.15f, fontSize * 4.4f);
+    auto rightBound = inner.removeFromRight(cellWidth * 2.f + fontSize * .3f);
+    auto overSampleColumn = rightBound.removeFromLeft(cellWidth);
+    rightBound.removeFromLeft(fontSize * .3f);
+    auto meterColumn = rightBound;
+    auto overSampleCell = overSampleColumn.removeFromTop(cellHeight);
+    auto gainBound = overSampleColumn.removeFromTop(switchHeight + cellGap);
+    auto bypassCell = meterColumn.removeFromTop(switchHeight + cellGap);
     // the meters run from the top of the figure to the top of the strip
-    const auto figureTop = bypassCell.getBottom();
+    const auto figureTop = juce::jmax(gainBound.getBottom(), bypassCell.getBottom());
     const auto figureBottom = inner.getBottom() - stripHeight;
     const auto plotHeight = juce::jmax(0.f, figureBottom - figureTop);
-    auto meterBound = rightBound.removeFromTop(plotHeight);
+    auto meterBound = meterColumn.removeFromTop(plotHeight);
 
-    // the oversampling choice ends the header row, the auto gain switch stacks
-    // right under it, so the pair reads like a style box over a curve bar
     footerPanel.setOverSampleAnchor(overSampleCell.getRight());
-    compensationButton->setBounds(gainCell.withSizeKeepingCentre(
-            gainCell.getWidth(), juce::jmin(gainCell.getHeight(), fontSize * zlinterface::ControlHeight)
+    compensationButton->setBounds(gainBound.withSizeKeepingCentre(
+            gainBound.getWidth(), juce::jmin(gainBound.getHeight(), fontSize * zlinterface::ControlHeight)
     ).toNearestInt());
     {
         const auto buttonWidth = juce::jmin(bypassCell.getWidth(), fontSize * 3.6f);
