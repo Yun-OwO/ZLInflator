@@ -98,10 +98,13 @@ public:
 
     void parameterChanged(const juce::String &parameterID, float newValue) override;
 
-
 private:
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ZLInflatorAudioProcessor)
+
+    /** pushes the current parameter values into the DSP, so that it never
+        depends on the order in which the host restores the state. */
+    void applyAllParameters();
 
     juce::dsp::Gain<float> inGain, outGain;
     MeterSource<float> meterIn, meterOut;

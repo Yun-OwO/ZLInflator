@@ -84,23 +84,30 @@ public:
         }
     }
 
-    void update(const int factor) {
-        auto rate = static_cast<int> (std::pow(2.0, factor));
-        juce::dsp::ProcessSpec spec{dupSpec.sampleRate * rate,
+    /** returns false when prepare() has not been called yet, so the caller can
+        keep the requested factor and apply it later. */
+    bool update(const int factor) {
+        if (!isReady) {
+            return false;
+        }
+        const auto safeFactor = juce::jlimit (0, 5, factor);
+        const auto rate = 1u << static_cast<unsigned int> (safeFactor);
+        juce::dsp::ProcessSpec spec{dupSpec.sampleRate * static_cast<double> (rate),
                                     dupSpec.numChannels,
-                                    dupSpec.maximumBlockSize * static_cast<unsigned int>(rate)};
+                                    dupSpec.maximumBlockSize * rate};
         for (auto &f: filters) {
             f.prepare(spec);
+            f.reset();
         }
+        return true;
     }
 
     void prepare(const juce::dsp::ProcessSpec &spec) {
-        for (auto &f: filters) {
-            f.prepare(spec);
-        }
         dupSpec.sampleRate = spec.sampleRate;
         dupSpec.numChannels = spec.numChannels;
         dupSpec.maximumBlockSize = spec.maximumBlockSize;
+        isReady = true;
+        update(0);
     }
 
     template<typename ProcessContext>
@@ -120,8 +127,8 @@ public:
 
 private:
     std::array<juce::dsp::LinkwitzRileyFilter<FloatType>, 3> filters{};
-    juce::dsp::LinkwitzRileyFilter<FloatType> low, high, all;
     juce::dsp::ProcessSpec dupSpec{44100, 0, 2};
+    bool isReady = false;
 };
 
 template<typename FloatType>
@@ -159,11 +166,10 @@ public:
 
     void setOverSampleFactor(int overSampleFactor) {
         const juce::GenericScopedLock<juce::CriticalSection> processLock(processorRef->getCallbackLock());
-        idxSampler = static_cast<size_t>(std::min(overSampleFactor, numSamplers - 1));
-        for (size_t i = 0; i < numBands - 1; ++i) {
-            filters[i].update(overSampleFactor);
-        }
-        processorRef->setLatencySamples(static_cast<int>(overSamplers[idxSampler]->getLatencyInSamples()));
+        // remember the requested factor: prepare() may not have created the
+        // over samplers yet (hosts are allowed to restore the state first)
+        idxSampler = static_cast<size_t>(juce::jlimit(0, numSamplers - 1, overSampleFactor));
+        applyOverSampleSettings();
     }
 
     void setTypes(size_t type1, size_t type2) {
@@ -195,6 +201,13 @@ public:
             if (context.usesSeparateInputAndOutputBlocks())
                 context.getOutputBlock().copyFrom(context.getInputBlock());
         } else {
+            if (overSamplers[idxSampler] == nullptr) {
+                // process() should only run after prepare(), but never crash if
+                // it does
+                if (context.usesSeparateInputAndOutputBlocks())
+                    context.getOutputBlock().copyFrom(context.getInputBlock());
+                return;
+            }
             auto oversampled_block =
                     overSamplers[idxSampler]->processSamplesUp(context.getInputBlock());
             auto oversampled_context =
@@ -251,9 +264,6 @@ public:
     void prepare(const juce::dsp::ProcessSpec &spec) {
         reset();
         sampleRate = spec.sampleRate;
-        for (size_t i = 0; i < numBands - 1; ++i) {
-            filters[i].prepare(spec);
-        }
         bufferSeparation.setSize((int) spec.numChannels * numBands,
                                  int(16 * spec.maximumBlockSize), false, false,
                                  true);
@@ -264,9 +274,28 @@ public:
                     true);
             overSamplers[i]->initProcessing(spec.maximumBlockSize);
         }
+        // the split filters run at the current over sampling rate, and the
+        // latency has to follow the factor that may have been restored before
+        // prepare() was called
+        for (auto &f: filters) {
+            f.prepare(spec);
+        }
+        applyOverSampleSettings();
     }
 
 private:
+    // must be called with the processor callback lock held
+    void applyOverSampleSettings() {
+        if (overSamplers[idxSampler] == nullptr) {
+            return;
+        }
+        for (size_t i = 0; i < numBands - 1; ++i) {
+            filters[i].update(static_cast<int>(idxSampler));
+        }
+        processorRef->setLatencySamples(
+                static_cast<int>(overSamplers[idxSampler]->getLatencyInSamples()));
+    }
+
     juce::AudioProcessor *processorRef;
     constexpr static const int numSamplers = 5, numBands = 3;
     std::atomic<double> sampleRate;
@@ -287,13 +316,27 @@ public:
         apvts = &parameters;
     }
 
+    static constexpr std::array<const char *, 12> getIDs() {
+        return {zldsp::effectIn::ID, zldsp::style1::ID, zldsp::style2::ID,
+                zldsp::wet::ID, zldsp::curve1::ID, zldsp::curve2::ID, zldsp::weight::ID,
+                zldsp::bandSplit::ID, zldsp::lowSplit::ID, zldsp::highSplit::ID,
+                zldsp::overSample::ID, zldsp::autoGain::ID};
+    }
+
     void addListeners() {
-        std::array IDs{zldsp::effectIn::ID, zldsp::style1::ID, zldsp::style2::ID,
-                       zldsp::wet::ID, zldsp::curve1::ID, zldsp::curve2::ID, zldsp::weight::ID,
-                       zldsp::bandSplit::ID, zldsp::lowSplit::ID, zldsp::highSplit::ID,
-                       zldsp::overSample::ID, zldsp::autoGain::ID};
-        for (auto &ID: IDs) {
+        for (auto &ID: getIDs()) {
             apvts->addParameterListener(ID, this);
+        }
+    }
+
+    /** push every audio parameter value into the DSP. Called after prepare() so
+        that the DSP always starts from the parameter values, no matter whether
+        the host restored the state before or after prepareToPlay(). */
+    void applyAllParameters() {
+        for (auto &ID: getIDs()) {
+            if (auto *value = apvts->getRawParameterValue(ID)) {
+                parameterChanged(ID, value->load());
+            }
         }
     }
 
@@ -302,10 +345,10 @@ public:
             waveShaper->setWet(static_cast<FloatType>(newValue) / static_cast<FloatType>(100));
         } else if (parameterID == zldsp::curve1::ID || parameterID == zldsp::curve2::ID ||
                    parameterID == zldsp::weight::ID || parameterID == zldsp::autoGain::ID) {
-            auto curve1 = apvts->getRawParameterValue(zldsp::curve1::ID)->load();
-            auto curve2 = apvts->getRawParameterValue(zldsp::curve2::ID)->load();
-            auto weight = apvts->getRawParameterValue(zldsp::weight::ID)->load();
-            auto compensation = static_cast<bool>(apvts->getRawParameterValue(zldsp::autoGain::ID)->load());
+            auto curve1 = loadValue(zldsp::curve1::ID);
+            auto curve2 = loadValue(zldsp::curve2::ID);
+            auto weight = loadValue(zldsp::weight::ID);
+            auto compensation = loadValue(zldsp::autoGain::ID) > 0.5f;
             if (parameterID == zldsp::curve1::ID) {
                 curve1 = newValue;
             } else if (parameterID == zldsp::curve2::ID) {
@@ -313,15 +356,15 @@ public:
             } else if (parameterID == zldsp::weight::ID) {
                 weight = newValue;
             } else {
-                compensation = static_cast<bool>(newValue);
+                compensation = newValue > 0.5f;
             }
             waveShaper->setShapes(static_cast<FloatType>(zldsp::curve1::formatV(curve1)),
                                   static_cast<FloatType>(zldsp::curve2::formatV(curve2)),
                                   static_cast<FloatType>(zldsp::weight::formatV(weight)),
                                   compensation);
         } else if (parameterID == zldsp::lowSplit::ID || parameterID == zldsp::highSplit::ID) {
-            auto lowSplit = apvts->getRawParameterValue(zldsp::lowSplit::ID)->load();
-            auto highSplit = apvts->getRawParameterValue(zldsp::highSplit::ID)->load();
+            auto lowSplit = loadValue(zldsp::lowSplit::ID);
+            auto highSplit = loadValue(zldsp::highSplit::ID);
             if (parameterID == zldsp::lowSplit::ID) {
                 lowSplit = newValue;
             } else {
@@ -329,12 +372,12 @@ public:
             }
             waveShaper->setCutoffFrequency(lowSplit, highSplit);
         } else if (parameterID == zldsp::bandSplit::ID) {
-            waveShaper->setSplitFlag(static_cast<bool>(newValue));
+            waveShaper->setSplitFlag(newValue > 0.5f);
         } else if (parameterID == zldsp::effectIn::ID) {
-            waveShaper->setEffectFlag(static_cast<bool>(newValue));
+            waveShaper->setEffectFlag(newValue > 0.5f);
         } else if (parameterID == zldsp::style1::ID || parameterID == zldsp::style2::ID) {
-            auto type1 = apvts->getRawParameterValue(zldsp::style1::ID)->load();
-            auto type2 = apvts->getRawParameterValue(zldsp::style2::ID)->load();
+            auto type1 = loadValue(zldsp::style1::ID);
+            auto type2 = loadValue(zldsp::style2::ID);
             if (parameterID == zldsp::style1::ID) {
                 type1 = newValue;
             } else {
@@ -347,8 +390,17 @@ public:
     }
 
 private:
+    /** getRawParameterValue() returns nullptr for an unknown ID, and the
+        returned pointer must not be dereferenced then. */
+    float loadValue(const char *ID) const {
+        if (auto *value = apvts->getRawParameterValue(ID)) {
+            return value->load();
+        }
+        return 0.0f;
+    }
+
     WaveShaper<FloatType> *waveShaper;
     juce::AudioProcessorValueTreeState *apvts;
 };
 
-#endif
+#endif

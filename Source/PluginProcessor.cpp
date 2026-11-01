@@ -105,6 +105,9 @@ void ZLInflatorAudioProcessor::prepareToPlay(double sampleRate,
     meterIn.prepare(spec);
     meterOut.prepare(spec);
     waveShaper.prepare(spec);
+    // the DSP is only updated through parameter listeners, and hosts may
+    // restore the state before prepareToPlay() is called
+    applyAllParameters();
 }
 
 void ZLInflatorAudioProcessor::reset() {
@@ -176,7 +179,14 @@ void ZLInflatorAudioProcessor::setStateInformation(const void *data,
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
     if (xmlState != nullptr && xmlState->hasTagName("ZLInflatorParaState")) {
         auto tempTree = juce::ValueTree::fromXml(*xmlState);
-        parameters.replaceState(tempTree.getChildWithName(parameters.state.getType()));
+        auto paraState = tempTree.getChildWithName(parameters.state.getType());
+        if (!paraState.isValid()) {
+            return;
+        }
+        parameters.replaceState(paraState);
+        // the host is free to restore the state before prepareToPlay(), and an
+        // empty state would leave the DSP on its own defaults
+        applyAllParameters();
     }
 }
 
@@ -204,4 +214,14 @@ void ZLInflatorAudioProcessor::parameterChanged(const juce::String &parameterID,
     } else if (parameterID.equalsIgnoreCase(zldsp::outputGain::ID)) {
         outGain.setGainDecibels(newValue);
     }
+}
+
+void ZLInflatorAudioProcessor::applyAllParameters() {
+    if (auto *value = parameters.getRawParameterValue(zldsp::inputGain::ID)) {
+        parameterChanged(zldsp::inputGain::ID, value->load());
+    }
+    if (auto *value = parameters.getRawParameterValue(zldsp::outputGain::ID)) {
+        parameterChanged(zldsp::outputGain::ID, value->load());
+    }
+    waveShaperAttach.applyAllParameters();
 }
