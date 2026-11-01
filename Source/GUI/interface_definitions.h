@@ -65,7 +65,11 @@ namespace zlinterface {
     auto inline const ControlCaptionHeight = 0.85f;
 
     /** One caption plus one control: what a container should hand out per control. */
+    // a knob frames its dial the same way a box frames its text: one caption
+    // row, one knob row, both using the box heights above
+    auto inline const KnobHeight = 3.6f;
     auto inline const ControlRowHeight = ControlHeight + ControlCaptionHeight;
+    auto inline const KnobRowHeight = KnobHeight + ControlCaptionHeight;
 
     struct fillRoundedShadowRectangleArgs {
         float blurRadius = 0.5f;

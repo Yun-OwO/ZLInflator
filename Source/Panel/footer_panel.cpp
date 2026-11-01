@@ -40,22 +40,25 @@ namespace zlpanel {
             return;
         }
         const auto fontSize = uiBase->getFontSize();
-        // the oversampling choice reads as one more box shaped control, capped
-        // so the knobs under it keep room for caption, dial and value
-        const auto boxRow = juce::jmin(bound.getHeight() * .42f,
-                                       fontSize * zlinterface::ControlRowHeight);
-        overSample->setBounds(bound.removeFromTop(boxRow).toNearestInt());
-        bound.removeFromTop(fontSize * .12f);
-        // the knob component sizes its caption against the cell height and its
-        // dial against min(width, height), so a squat cell gives a tiny dial:
-        // only the caption row is squeezed, the dial keeps the room it needs
-        const auto knobSize = juce::jmin(fontSize * zlinterface::ControlRowHeight * 1.4f,
-                                         bound.getWidth() / 3.f);
-        if (knobSize <= 0.f) {
+        // one row of captions over one row of controls: the lowest edge of the
+        // oversampling box meets the knob dials, the captions line the title up
+        const auto knobRow = juce::jmin(fontSize * zlinterface::KnobRowHeight,
+                                        bound.getHeight(),
+                                        bound.getWidth() / 3.f * zlinterface::KnobRowHeight / zlinterface::KnobHeight);
+        const auto boxRow = juce::jmin(fontSize * zlinterface::ControlRowHeight,
+                                       juce::jmax(0.f, knobRow * zlinterface::ControlHeight / zlinterface::KnobHeight));
+        if (boxRow <= 0.f || knobRow <= 0.f) {
             return;
         }
-        auto knobBound = juce::Rectangle<float>(bound.getX(), bound.getY(), knobSize * 3.f, knobSize);
-        const auto unitWidth = knobSize;
+        // the knob cells are as wide as the caption of the oversampling box, so
+        // the four titles all sit on one line above their controls
+        const auto columnWidth = juce::jmin(bound.getWidth() / 4.f, fontSize * 5.f);
+        auto strip = juce::Rectangle<float>(
+                bound.getRight() - columnWidth * 4.f, bound.getY(), columnWidth * 4.f, knobRow);
+        overSample->setBounds(
+                strip.removeFromLeft(columnWidth).removeFromBottom(boxRow + fontSize * zlinterface::ControlCaptionHeight).toNearestInt());
+        auto knobBound = strip;
+        const auto unitWidth = knobBound.getWidth() / 3.f;
         inputGain->setBounds(knobBound.removeFromLeft(unitWidth).toNearestInt());
         outputGain->setBounds(knobBound.removeFromLeft(unitWidth).toNearestInt());
         wet->setBounds(knobBound.toNearestInt());

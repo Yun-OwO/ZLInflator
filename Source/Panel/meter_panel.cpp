@@ -34,13 +34,19 @@ void MeterPanel::paint(juce::Graphics &) {}
 
 void MeterPanel::resized() {
     auto bound = getLocalBounds().toFloat();
-    // the auto gain button keeps the same height as every other button,
-    // and sits as far down as a knob or combo box in the strip above it
-    auto buttonBound = bound.removeFromTop(juce::jmin(bound.getHeight() * 0.3f,
-                                                      uiBase->getFontSize() * zlinterface::ControlCaptionHeight));
-    bound.removeFromTop(uiBase->getFontSize() * zlinterface::ControlHeight);
-    buttonBound = buttonBound.withSizeKeepingCentre(buttonBound.getWidth() * 0.8333f, buttonBound.getHeight());
-    compensationButton->setBounds(buttonBound.toNearestInt());
+    const auto fontSize = uiBase->getFontSize();
+    // auto gain is a box shaped button: stacked under the oversampling choice
+    // at the bottom right corner, where the column of the strip ends
+    const auto buttonHeight = juce::jmin(fontSize * zlinterface::ControlRowHeight,
+                                         bound.getHeight() * 0.34f);
+    const auto buttonWidth = juce::jmin(bound.getWidth(), fontSize * 5.f);
+    auto buttonBound = juce::Rectangle<float>(bound.getRight() - buttonWidth,
+                                              bound.getBottom() - buttonHeight,
+                                              buttonWidth, buttonHeight);
+    if (!buttonBound.isEmpty()) {
+        compensationButton->setBounds(buttonBound.toNearestInt());
+    }
+    bound.removeFromBottom(buttonHeight + fontSize * .2f);
     auto inputBound = bound.removeFromLeft(bound.getWidth() * 0.5f);
     inputBackground.setBounds(inputBound.toNearestInt());
     outputBackground.setBounds(bound.toNearestInt());
