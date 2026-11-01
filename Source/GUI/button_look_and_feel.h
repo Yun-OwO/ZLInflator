@@ -51,7 +51,7 @@ namespace zlinterface {
                 g.setColour(uiBase->getTextInactiveColor());
             }
             if (uiBase->getFontSize() > 0) {
-                g.setFont(uiBase->getFontSize() * FontLarge);
+                g.setFont(uiBase->getFontSize() * FontNormal);
             } else {
                 g.setFont(bounds.getHeight() * 0.35f);
             }

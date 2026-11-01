@@ -39,7 +39,24 @@ namespace zlinterface {
         }
     }
 
+    void BandPlotComponent::refreshParameters() {
+        splitValues[0] = getSplitValue(zldsp::lowSplit::ID);
+        splitValues[1] = getSplitValue(zldsp::highSplit::ID);
+        for (size_t i = 0; i < BandNUM; ++i) {
+            bandGainValues[i] = getBandGainValue(i);
+            bandGains[i] = getBandGain(i);
+        }
+    }
+
     void BandPlotComponent::paint(juce::Graphics &g) {
+        // the timer drives the refresh while the editor sits idle, but the first
+        // frame after opening has to be right too, so paint also tops it up
+        if (juce::Time::getMillisecondCounterHiRes() - lastSpectrumUpdate >= 30.0) {
+            updateSpectrum();
+        }
+        // read the parameters straight from the tree, a repaint can outrun the
+        // async callback that announces a change
+        refreshParameters();
         auto bound = getLocalBounds().toFloat();
         const auto fontSize = uiBase.getFontSize();
         auto innerBound = uiBase.fillRoundedShadowRectangle(g, bound, fontSize * .5f,
@@ -75,8 +92,6 @@ namespace zlinterface {
         }
 
         // spectrum, below everything else
-        drawSpectrum(g, plotBound);
-
         // unity line of the -12 dB reference level
         {
             g.setColour(uiBase.getTextHideColor());
@@ -90,21 +105,6 @@ namespace zlinterface {
         // the spectrum sits on top of the curves, the way a FabFilter plot reads
         drawSpectrum(g, plotBound);
 
-        // the gain every band ends up with, at the top of its own band
-        for (size_t i = 0; i < BandNUM; ++i) {
-            const auto [fLow, fHigh] = getBandRange(i);
-            const auto rectWidth = fontSize * 4.f;
-            // all three readings sit in one row, so the card over the figure never covers them
-            const auto midX = juce::jlimit(plotBound.getX(), plotBound.getRight() - rectWidth * 3.2f,
-                                           (getX(fLow) + getX(fHigh)) * .5f - rectWidth * .5f);
-            g.setFont(juce::Font(fontSize * .8f));
-            g.setColour(uiBase.getTextInactiveColor());
-            g.drawText(juce::String(zlinterface::formatFloat(bandGains[i], 1)) + " dB",
-                       juce::Rectangle<float>(midX, plotBound.getY() + fontSize * .15f,
-                                              rectWidth, fontSize * 1.2f).toNearestInt(),
-                       juce::Justification::centred, false);
-        }
-
         // split lines, drawn above the curves
         for (size_t i = 0; i < splitValues.size(); ++i) {
             drawSplitLine(g, plotBound, i);
@@ -115,12 +115,19 @@ namespace zlinterface {
         juce::Path spectrumPath;
         spectrumPath.startNewSubPath(plotBound.getX(), plotBound.getBottom());
         const auto scopeSize = static_cast<int>(scopeData.size());
-        for (size_t i = 0; i < scopeData.size(); ++i) {
+        auto previous = juce::Point<float>(plotBound.getX(), getY(juce::jmax(scopeData[0], yMin - 12.f)));
+        spectrumPath.lineTo(previous);
+        for (size_t i = 1; i < scopeData.size(); ++i) {
             const auto proportion = static_cast<float>(i) / static_cast<float>(scopeSize - 1);
             const auto freq = xMin * std::pow(xMax / xMin, proportion);
             // scopeData already holds dB, so no second conversion here
-            spectrumPath.lineTo(getX(freq), getY(juce::jmax(scopeData[i], yMin - 12.f)));
+            const auto point = juce::Point<float>(getX(freq), getY(juce::jmax(scopeData[i], yMin - 12.f)));
+            // half way between two points keeps the trace round instead of saw toothed
+            const auto middle = (previous + point) * .5f;
+            spectrumPath.quadraticTo(previous.x, previous.y, middle.x, middle.y);
+            previous = point;
         }
+        spectrumPath.lineTo(previous);
         spectrumPath.lineTo(plotBound.getRight(), plotBound.getBottom());
         spectrumPath.closeSubPath();
         juce::ColourGradient gradient(uiBase.getTextColor().withAlpha(0.28f), plotBound.getX(), plotBound.getY(),
@@ -134,25 +141,37 @@ namespace zlinterface {
 
     void BandPlotComponent::drawBandCurves(juce::Graphics &g, juce::Rectangle<float> plotBound) const {
         juce::ignoreUnused(plotBound);
-        if (getShaper == nullptr) {
-            return;
-        }
+        const auto fontSize = uiBase.getFontSize();
         for (size_t i = 0; i < BandNUM; ++i) {
             const auto [fLow, fHigh] = getBandRange(i);
             const auto y = getY(bandGains[i]);
             const auto alpha = 0.5f + 0.18f * static_cast<float>(i);
+            const auto isActive = activeBand == static_cast<int>(i) &&
+                                  (isDraggingGain || getBandLineBound(i).contains(lastMousePos));
 
             // the level the band ends up with, drawn across its own range
             juce::Path gainPath;
             gainPath.startNewSubPath(getX(fLow), y);
             gainPath.lineTo(getX(fHigh), y);
-            g.setColour(uiBase.getTextColor().withAlpha(alpha));
-            g.strokePath(gainPath, juce::PathStrokeType(2.5f, juce::PathStrokeType::curved,
-                                                        juce::PathStrokeType::rounded));
             // a soft glow around the line, so the three bands read apart
-            g.setColour(uiBase.getTextColor().withAlpha(alpha * .25f));
+            g.setColour(uiBase.getTextColor().withAlpha(alpha * (isActive ? .5f : .25f)));
             g.strokePath(gainPath, juce::PathStrokeType(7.f, juce::PathStrokeType::curved,
                                                         juce::PathStrokeType::rounded));
+            g.setColour(isActive ? uiBase.getLineColor1() : uiBase.getTextColor().withAlpha(alpha));
+            g.strokePath(gainPath, juce::PathStrokeType(2.5f, juce::PathStrokeType::curved,
+                                                        juce::PathStrokeType::rounded));
+
+            // the trim that line stands for, right above it
+            const auto text = juce::String(bandGainValues[i] > 0.f ? "+" : "") +
+                              zlinterface::formatFloat(bandGainValues[i], 1) + " dB";
+            const auto rectWidth = fontSize * 3.6f;
+            const auto midX = juce::jlimit(getX(fLow), juce::jmax(getX(fLow), getX(fHigh) - rectWidth),
+                                           (getX(fLow) + getX(fHigh)) * .5f - rectWidth * .5f);
+            g.setFont(juce::Font(fontSize * .8f));
+            g.setColour(isActive ? uiBase.getLineColor1() : uiBase.getTextInactiveColor());
+            g.drawText(text,
+                       juce::Rectangle<float>(midX, y - fontSize * 1.45f, rectWidth, fontSize * 1.2f).toNearestInt(),
+                       juce::Justification::centred, false);
         }
     }
 
@@ -165,17 +184,21 @@ namespace zlinterface {
         g.setColour(colour);
         g.drawLine(x, plotBound.getY(), x, plotBound.getBottom(), isActive ? 1.5f : 1.f);
 
-        g.setFont(juce::Font(fontSize * FontSmall));
-        g.setColour(isActive ? uiBase.getLineColor1() : uiBase.getTextColor());
         const auto labelWidth = fontSize * 3.2f;
-        // the low split reads to the left of its line, the high one to the right,
+        const auto labelHeight = fontSize * 1.2f;
+        // the low split reads to the left of its own line, the high one to its right,
         // so the two can never sit on top of each other
         const auto wantedX = index == 0 ? x - labelWidth - fontSize * .2f : x + fontSize * .2f;
         const auto labelX = juce::jlimit(plotBound.getX(), plotBound.getRight() - labelWidth, wantedX);
-        const auto labelY = plotBound.getBottom() - fontSize * 1.5f;
+        const auto labelY = plotBound.getY() + fontSize * .3f;
+        const auto labelBound = juce::Rectangle<float>(labelX, labelY, labelWidth, labelHeight);
+        // a soft plate keeps the reading off the spectrum underneath
+        g.setColour(uiBase.getBackgroundColor().withAlpha(.6f));
+        g.fillRoundedRectangle(labelBound, fontSize * .25f);
+        g.setFont(juce::Font(fontSize * FontSmall));
+        g.setColour(isActive ? uiBase.getLineColor1() : uiBase.getTextColor());
         g.drawText(zlinterface::formatFloat(splitValues[index], 0) + " Hz",
-                   juce::Rectangle<float>(labelX, labelY, labelWidth, fontSize * 1.2f).toNearestInt(),
-                   juce::Justification::centred, false);
+                   labelBound.toNearestInt(), juce::Justification::centred, false);
 
         const auto handleBound = getHandleBound(x);
         uiBase.fillRoundedShadowRectangle(g, handleBound, fontSize * .25f,
@@ -191,19 +214,31 @@ namespace zlinterface {
     void BandPlotComponent::mouseMove(const juce::MouseEvent &event) {
         lastMousePos = event.position;
         const auto previous = activeHandle;
+        const auto previousBand = activeBand;
         activeHandle = -1;
+        activeBand = -1;
         for (size_t i = 0; i < splitValues.size(); ++i) {
             if (getHandleBound(getX(splitValues[i])).expanded(2.f).contains(event.position)) {
                 activeHandle = static_cast<int>(i);
             }
         }
-        if (previous != activeHandle) {
+        if (activeHandle < 0) {
+            for (size_t i = 0; i < BandNUM; ++i) {
+                if (getBandLineBound(i).contains(event.position)) {
+                    activeBand = static_cast<int>(i);
+                }
+            }
+        }
+        setMouseCursor(activeBand >= 0 ? juce::MouseCursor::UpDownResizeCursor
+                                       : juce::MouseCursor::NormalCursor);
+        if (previous != activeHandle || previousBand != activeBand) {
             repaint();
         }
     }
 
     void BandPlotComponent::mouseDown(const juce::MouseEvent &event) {
         lastMousePos = event.position;
+        // the split handles win over the level lines they sit above
         for (size_t i = 0; i < splitValues.size(); ++i) {
             if (getHandleBound(getX(splitValues[i])).expanded(2.f).contains(event.position)) {
                 activeHandle = static_cast<int>(i);
@@ -212,10 +247,31 @@ namespace zlinterface {
                 return;
             }
         }
+        for (size_t i = 0; i < BandNUM; ++i) {
+            if (getBandLineBound(i).contains(event.position)) {
+                activeBand = static_cast<int>(i);
+                isDraggingGain = true;
+                dragStart = event.position;
+                repaint();
+                return;
+            }
+        }
     }
 
     void BandPlotComponent::mouseDrag(const juce::MouseEvent &event) {
         lastMousePos = event.position;
+        if (isDraggingGain && activeBand >= 0) {
+            // one pixel of travel is one pixel on the dB scale of the plot
+            const auto plotBound = getPlotBound();
+            if (plotBound.getHeight() <= 0) {
+                return;
+            }
+            const auto start = bandGainValues[static_cast<size_t>(activeBand)] -
+                               (event.position.y - dragStart.y) / plotBound.getHeight() * (yMax - yMin);
+            setBandGainValue(static_cast<size_t>(activeBand), start);
+            repaint();
+            return;
+        }
         if (!isDragging || activeHandle < 0) {
             return;
         }
@@ -239,38 +295,36 @@ namespace zlinterface {
 
     void BandPlotComponent::mouseUp(const juce::MouseEvent &) {
         isDragging = false;
+        isDraggingGain = false;
         repaint();
     }
 
     void BandPlotComponent::mouseExit(const juce::MouseEvent &) {
-        if (!isDragging && activeHandle >= 0) {
+        if (!isDragging && !isDraggingGain && (activeHandle >= 0 || activeBand >= 0)) {
             activeHandle = -1;
+            activeBand = -1;
             repaint();
         }
     }
 
     void BandPlotComponent::parameterChanged(const juce::String &, float) {
-        splitValues[0] = getSplitValue(zldsp::lowSplit::ID);
-        splitValues[1] = getSplitValue(zldsp::highSplit::ID);
+        refreshParameters();
         triggerAsyncUpdate();
     }
 
     void BandPlotComponent::handleAsyncUpdate() {
-        for (size_t i = 0; i < BandNUM; ++i) {
-            bandGains[i] = getBandGain(i);
-        }
+        refreshParameters();
         repaint();
     }
 
     void BandPlotComponent::timerCallback() {
         updateSpectrum();
-        for (size_t i = 0; i < BandNUM; ++i) {
-            bandGains[i] = getBandGain(i);
-        }
+        refreshParameters();
         repaint();
     }
 
     void BandPlotComponent::updateSpectrum() {
+        lastSpectrumUpdate = juce::Time::getMillisecondCounterHiRes();
         if (spectrum == nullptr) {
             return;
         }
@@ -284,23 +338,25 @@ namespace zlinterface {
         const auto sampleRate = juce::jmax(1.0, spectrum->getSampleRate());
         const auto scopeSize = static_cast<float>(scopeData.size());
         const auto logRatio = std::log(xMax / xMin);
+        const auto binOf = [&](float freq) {
+            return juce::jlimit(1.f, static_cast<float>(numBins - 1),
+                                freq * static_cast<float>(fftSize) / static_cast<float>(sampleRate));
+        };
+        // the analysis follows the continuous log frequency axis of the plot: every
+        // point is a triangular weighted average of the bins around its frequency,
+        // so a point never holds a whole bin and the low end stops looking like steps
         for (size_t i = 0; i < scopeData.size(); ++i) {
-            const auto freqLow = xMin * std::exp(logRatio * static_cast<float>(i) / scopeSize);
-            const auto freqHigh = xMin * std::exp(logRatio * static_cast<float>(i + 1) / scopeSize);
-            const auto toBin = [&](float freq) {
-                return juce::jlimit(1.f, static_cast<float>(numBins - 1),
-                                    freq * static_cast<float>(fftSize) / static_cast<float>(sampleRate));
-            };
-            const auto lowerBin = static_cast<size_t>(toBin(freqLow));
-            const auto upperBin = static_cast<size_t>(toBin(freqHigh));
-            // a scope point can span several bins down low: take the loudest of them,
-            // otherwise a narrow peak falls between two points and is never drawn
-            auto magnitude = 0.f;
-            for (auto bin = lowerBin; bin <= juce::jmax(lowerBin, upperBin); ++bin) {
-                magnitude = juce::jmax(magnitude, fftData[bin]);
-            }
+            const auto freq = xMin * std::exp(logRatio * static_cast<float>(i) / scopeSize);
+            const auto centre = binOf(freq);
+            const auto lower = std::floor(centre);
+            const auto upper = lower + 1.f;
+            const auto fraction = centre - lower;
+            const auto lowerWeight = 1.f - fraction;
+            const auto lowerBin = static_cast<size_t>(lower);
+            const auto upperBin = static_cast<size_t>(upper);
             // normalise the hann window and the one sided spectrum
-            magnitude = magnitude * 4.f / static_cast<float>(fftSize);
+            const auto power = fftData[lowerBin] * lowerWeight + fftData[upperBin] * fraction;
+            const auto magnitude = power * 4.f / static_cast<float>(fftSize);
             const auto dB = juce::Decibels::gainToDecibels(magnitude, -100.f);
             // fast attack, slow release
             // never sink below the bottom of the plot, or the decay curve hugs the edge for seconds
@@ -308,6 +364,13 @@ namespace zlinterface {
             auto &current = scopeData[i];
             current = juce::jmax(clamped, current - 1.5f);
         }
+#ifdef ZLPLOT_DEBUG
+        {
+            float mx = -1000.f;
+            for (auto v: scopeData) mx = juce::jmax(mx, v);
+            std::fprintf(stderr, "updateSpectrum called, scope peak = %.2f\n", mx);
+        }
+#endif
     }
 
     float BandPlotComponent::getX(float freq) const {
@@ -368,7 +431,43 @@ namespace zlinterface {
         if (output <= 0.f) {
             return yMin;
         }
-        return juce::jlimit(yMin, yMax, juce::Decibels::gainToDecibels(output));
+        // the line the band's level sits at: what the shaper does to a -12 dB
+        // input, plus the trim the line itself stands for
+        return juce::jlimit(yMin, yMax,
+                            juce::Decibels::gainToDecibels(output) + bandGainValues[band]);
+    }
+
+    const char *BandPlotComponent::getBandGainID(size_t band) {
+        if (band == Band::mid) {
+            return zldsp::bandGainMid::ID;
+        }
+        if (band == Band::high) {
+            return zldsp::bandGainHigh::ID;
+        }
+        return zldsp::bandGainLow::ID;
+    }
+
+    float BandPlotComponent::getBandGainValue(size_t band) const {
+        if (auto *value = apvts.getRawParameterValue(getBandGainID(band))) {
+            return value->load();
+        }
+        return 0.f;
+    }
+
+    void BandPlotComponent::setBandGainValue(size_t band, float dB) {
+        if (auto *parameter = apvts.getParameter(getBandGainID(band))) {
+            parameter->setValueNotifyingHost(parameter->convertTo0to1(dB));
+        }
+    }
+
+    juce::Rectangle<float> BandPlotComponent::getBandLineBound(size_t band) const {
+        const auto [fLow, fHigh] = getBandRange(band);
+        const auto y = getY(bandGains[band]);
+        const auto xLow = getX(fLow);
+        const auto xHigh = juce::jmax(xLow, getX(fHigh));
+        // a strip of a comfortable height, so the line is easy to grab
+        const auto touchHeight = juce::jmax(uiBase.getFontSize() * .9f, 12.f);
+        return juce::Rectangle<float>(xLow, y - touchHeight * .5f, xHigh - xLow, touchHeight);
     }
 
     juce::Rectangle<float> BandPlotComponent::getPlotBound() const {

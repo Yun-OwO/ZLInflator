@@ -263,6 +263,32 @@ namespace zldsp {
         }
     };
 
+    // per band trims, so the two split handles on the figure also set the
+    // balance of the bands themselves
+    class bandGainLow : public FloatParameters<bandGainLow> {
+    public:
+        auto static constexpr ID = "band_gain_low";
+        auto static constexpr name = "Low Gain (dB)";
+        inline auto static const range = juce::NormalisableRange<float>(-12.f, 12.f, .1f, 0.5, true);
+        auto static constexpr defaultV = 0.0f;
+    };
+
+    class bandGainMid : public FloatParameters<bandGainMid> {
+    public:
+        auto static constexpr ID = "band_gain_mid";
+        auto static constexpr name = "Mid Gain (dB)";
+        inline auto static const range = juce::NormalisableRange<float>(-12.f, 12.f, .1f, 0.5, true);
+        auto static constexpr defaultV = 0.0f;
+    };
+
+    class bandGainHigh : public FloatParameters<bandGainHigh> {
+    public:
+        auto static constexpr ID = "band_gain_high";
+        auto static constexpr name = "High Gain (dB)";
+        inline auto static const range = juce::NormalisableRange<float>(-12.f, 12.f, .1f, 0.5, true);
+        auto static constexpr defaultV = 0.0f;
+    };
+
     inline juce::AudioProcessorValueTreeState::ParameterLayout getParameterLayout() {
         juce::AudioProcessorValueTreeState::ParameterLayout layout;
         // the parameters of the two shaper mixer are kept at their former
@@ -276,7 +302,8 @@ namespace zldsp {
                    overSample::get(), style1::get(false), style2::get(false),
                    styleLow::get(), curveLow::get(),
                    styleMid::get(), curveMid::get(),
-                   styleHigh::get(), curveHigh::get());
+                   styleHigh::get(), curveHigh::get(),
+                   bandGainLow::get(), bandGainMid::get(), bandGainHigh::get());
         return layout;
     }
 }

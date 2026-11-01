@@ -53,7 +53,7 @@ namespace zlinterface {
             }
             auto labelArea = label.getLocalBounds().toFloat();
             auto center = labelArea.getCentre();
-            float labelFontSize = uiBase->getFontSize() > 0 ? uiBase->getFontSize() * FontLarge
+            float labelFontSize = uiBase->getFontSize() > 0 ? uiBase->getFontSize() * FontNormal
                                                             : labelArea.getHeight() * 0.6f;
             g.setFont(juce::Font(labelFontSize));
             const juce::String text{label.getText()};
@@ -85,7 +85,7 @@ namespace zlinterface {
                                        int &idealWidth, int &idealHeight) override {
             juce::ignoreUnused(text, isSeparator, standardMenuItemHeight);
             idealWidth = int(0);
-            idealHeight = int(uiBase->getFontSize() * FontLarge * 1.2f);
+            idealHeight = int(uiBase->getFontSize() * FontNormal * 1.2f);
         }
 
         void drawPopupMenuItem(juce::Graphics &g, const juce::Rectangle<int> &area,
@@ -101,7 +101,7 @@ namespace zlinterface {
                 g.setColour(uiBase->getTextInactiveColor());
             }
             if (uiBase->getFontSize() > 0) {
-                g.setFont(uiBase->getFontSize() * FontLarge);
+                g.setFont(uiBase->getFontSize() * FontNormal);
             } else {
                 g.setFont((float) area.getHeight() * 0.35f);
             }

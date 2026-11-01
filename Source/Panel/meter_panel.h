@@ -37,6 +37,8 @@ private:
     std::unique_ptr<zlinterface::ButtonComponent> compensationButton;
     std::array<std::unique_ptr<zlinterface::ButtonComponent> *, 1> buttonList{&compensationButton};
     juce::OwnedArray<juce::AudioProcessorValueTreeState::ButtonAttachment> buttonAttachments;
+
+    zlinterface::UIBase *uiBase;
 };
 
 

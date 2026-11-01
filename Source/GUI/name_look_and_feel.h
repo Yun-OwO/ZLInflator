@@ -29,7 +29,7 @@ namespace zlinterface {
             }
             auto labelArea{label.getLocalBounds().toFloat()};
             auto center = labelArea.getCentre();
-            float labelFontSize = uiBase->getFontSize();
+            float labelFontSize = uiBase->getFontSize() * zlinterface::FontSmall;
             if (labelFontSize <= 0) {
                 labelFontSize = labelArea.getHeight() * 0.6f;
             }

@@ -16,7 +16,8 @@ MeterPanel::MeterPanel(ZLInflatorAudioProcessor &p, zlinterface::UIBase &base) :
         inputBackground("IN", base),
         outputBackground("OUT", base),
         inputMeter(p.getInputMeterSource(), -40.0f, 0.0f, base),
-        outputMeter(p.getOutputMeterSource(), -40.0f, 0.0f, base) {
+        outputMeter(p.getOutputMeterSource(), -40.0f, 0.0f, base),
+        uiBase(&base) {
     addAndMakeVisible(inputBackground);
     addAndMakeVisible(outputBackground);
     addAndMakeVisible(inputMeter);
@@ -33,7 +34,9 @@ void MeterPanel::paint(juce::Graphics &) {}
 
 void MeterPanel::resized() {
     auto bound = getLocalBounds().toFloat();
-    auto buttonBound = bound.removeFromTop(bound.getHeight() * 0.2f);
+    // the auto gain button keeps the same height as every other button
+    auto buttonBound = bound.removeFromTop(juce::jmin(bound.getHeight() * 0.3f,
+                                                      uiBase->getFontSize() * zlinterface::ControlRowHeight));
     buttonBound = buttonBound.withSizeKeepingCentre(buttonBound.getWidth() * 0.8333f, buttonBound.getHeight());
     compensationButton->setBounds(buttonBound.toNearestInt());
     auto inputBound = bound.removeFromLeft(bound.getWidth() * 0.5f);

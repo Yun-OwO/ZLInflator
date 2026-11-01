@@ -47,7 +47,8 @@ namespace zlpanel {
     class FooterPanel : public juce::Component,
                         private juce::AudioProcessorValueTreeState::Listener {
     public:
-        FooterPanel(juce::AudioProcessorValueTreeState &parameters, zlinterface::UIBase &base);
+        /** @param audioParameters  the main audio parameters (input_gain, wet, …). @param uiParameters  the UI state tree (ui_footer). */
+        FooterPanel(juce::AudioProcessorValueTreeState &audioParameters, juce::AudioProcessorValueTreeState &uiParameters, zlinterface::UIBase &base);
 
         ~FooterPanel() override;
 
@@ -68,11 +69,11 @@ namespace zlpanel {
 
         zlinterface::UIBase &uiBase;
         juce::AudioProcessorValueTreeState &apvts;
+        juce::AudioProcessorValueTreeState &uiApvts;
 
         std::unique_ptr<zlinterface::RotarySliderComponent> inputGain, outputGain, wet;
         std::unique_ptr<zlinterface::ComboboxComponent> overSample;
         std::unique_ptr<SettingButton> foldButton;
-        std::array<std::string, 3> ioIDs{zldsp::inputGain::ID, zldsp::outputGain::ID, zldsp::wet::ID};
         std::array<std::string, 1> overSampleIDs{zldsp::overSample::ID};
         juce::OwnedArray<juce::AudioProcessorValueTreeState::SliderAttachment> sliderAttachments;
         juce::OwnedArray<juce::AudioProcessorValueTreeState::ComboBoxAttachment> boxAttachments;

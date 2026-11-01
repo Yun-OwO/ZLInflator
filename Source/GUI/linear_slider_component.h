@@ -44,10 +44,12 @@ namespace zlinterface {
 
         void resized() override {
             auto bound = getLocalBounds().toFloat();
-            auto labelBound = bound.removeFromTop(labelHeight * bound.getHeight());
-            label.setBounds(labelBound.toNearestInt());
-            bound = bound.withSizeKeepingCentre(bound.getWidth(), bound.getWidth() * sliderRatio);
-            slider.setBounds(bound.toNearestInt());
+            const auto captionHeight = juce::jmin(bound.getHeight(),
+                                                  uiBase->getFontSize() * zlinterface::ControlCaptionHeight);
+            label.setBounds(bound.removeFromTop(captionHeight).toNearestInt());
+            // keep the drag bar flat: it hands the height back to the buttons beside it
+            const auto trackHeight = juce::jmin(bound.getHeight(), uiBase->getFontSize() * 1.5f);
+            slider.setBounds(bound.withSizeKeepingCentre(bound.getWidth(), trackHeight).toNearestInt());
         }
 
         void paint(juce::Graphics &g) override {

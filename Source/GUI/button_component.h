@@ -40,9 +40,12 @@ namespace zlinterface {
 
         void resized() override {
             auto bound = getLocalBounds().toFloat();
-            auto labelBound = bound.removeFromTop(labelHeight * bound.getHeight());
-            label.setBounds(labelBound.toNearestInt());
-            button.setBounds(bound.toNearestInt());
+            const auto captionHeight = juce::jmin(bound.getHeight(),
+                                                  uiBase->getFontSize() * zlinterface::ControlCaptionHeight);
+            label.setBounds(bound.removeFromTop(captionHeight).toNearestInt());
+            const auto buttonHeight = juce::jmin(bound.getHeight(),
+                                                 uiBase->getFontSize() * zlinterface::ControlHeight);
+            button.setBounds(bound.withSizeKeepingCentre(bound.getWidth(), buttonHeight).toNearestInt());
         }
 
         void paint(juce::Graphics &g) override {

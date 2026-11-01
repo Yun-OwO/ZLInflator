@@ -68,6 +68,8 @@ namespace zlinterface {
 
         void timerCallback() override;
 
+        void refreshParameters();
+
         void updateSpectrum();
 
     private:
@@ -82,6 +84,12 @@ namespace zlinterface {
         float getSplitValue(const char *ID) const;
 
         void setSplitValue(const char *ID, float value);
+
+        static const char *getBandGainID(size_t band);
+
+        float getBandGainValue(size_t band) const;
+
+        void setBandGainValue(size_t band, float dB);
 
         std::pair<float, float> getBandRange(size_t band) const;
 
@@ -99,6 +107,9 @@ namespace zlinterface {
 
         juce::Rectangle<float> getHandleBound(float x) const;
 
+        /** The clickable strip around the level line of a band. */
+        juce::Rectangle<float> getBandLineBound(size_t band) const;
+
         static constexpr size_t fftOrder = 11;
         static constexpr size_t fftSize = static_cast<size_t>(1) << fftOrder;
         static constexpr size_t minHandlesDistance = 24;
@@ -113,15 +124,21 @@ namespace zlinterface {
         std::array<float, fftSize * 2> fftData{};
         std::vector<float> samples;
         std::array<float, 512> scopeData{};
+        double lastSpectrumUpdate = 0.0;
         std::array<float, 2> splitValues{};
         std::array<float, BandNUM> bandGains{};
+        std::array<float, BandNUM> bandGainValues{};
 
         int activeHandle = -1;
+        int activeBand = -1;
         bool isDragging = false;
+        bool isDraggingGain = false;
+        juce::Point<float> dragStart;
 
         juce::Point<float> lastMousePos;
 
-        constexpr const static std::array IDs{zldsp::lowSplit::ID, zldsp::highSplit::ID, zldsp::effectIn::ID};
+        constexpr const static std::array IDs{zldsp::lowSplit::ID, zldsp::highSplit::ID, zldsp::effectIn::ID,
+                                             zldsp::bandGainLow::ID, zldsp::bandGainMid::ID, zldsp::bandGainHigh::ID};
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BandPlotComponent)
     };

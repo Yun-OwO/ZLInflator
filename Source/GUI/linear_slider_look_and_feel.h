@@ -44,6 +44,7 @@ namespace zlinterface {
             auto *l = new juce::Label();
             l->setJustificationType(juce::Justification::centred);
             l->setInterceptsMouseClicks(false, false);
+            // the value reads at the same size as every other control's reading
             return l;
         }
 
@@ -65,7 +66,7 @@ namespace zlinterface {
             auto labelArea{label.getLocalBounds().toFloat()};
             auto center = labelArea.getCentre();
             if (uiBase->getFontSize() > 0) {
-                g.setFont(uiBase->getFontSize() * FontLarge);
+                g.setFont(uiBase->getFontSize() * FontNormal);
             } else {
                 g.setFont(labelArea.getHeight() * 0.6f);
             }

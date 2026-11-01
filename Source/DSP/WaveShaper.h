@@ -123,6 +123,11 @@ public:
         filters[1].setCutoffFrequency(highFreq);
     }
 
+    void setBandGain(size_t band, FloatType dB) {
+        bandGains[juce::jmin(band, static_cast<size_t>(numBands) - 1)].store(
+                std::pow(static_cast<FloatType>(10), dB * static_cast<FloatType>(0.05)));
+    }
+
     void setEffectFlag(bool effectFlag) {
         effect.store(effectFlag);
     }
@@ -206,6 +211,9 @@ public:
                             });
                 }
                 for (size_t i = 1; i < numBands; ++i) {
+                    // the band trim follows the shaper, so dragging the level
+                    // line of a band on the figure is what sets it
+                    blocks[i].multiplyBy(bandGains[i].load());
                     blocks[0].add(blocks[i]);
                 }
             }
@@ -262,6 +270,7 @@ private:
     constexpr static const int numSamplers = 5, numBands = 3;
     std::atomic<double> sampleRate;
     std::array<shaper::BandShaper<FloatType>, numBands> bandShapers;
+    std::array<std::atomic<FloatType>, numBands> bandGains{{static_cast<FloatType>(1), static_cast<FloatType>(1), static_cast<FloatType>(1)}};
     std::atomic<FloatType> m_wet = static_cast<FloatType>(zldsp::wet::formatV(zldsp::wet::defaultV));
     std::atomic<FloatType> m_dry = static_cast<FloatType>(1) -
                                    static_cast<FloatType>(zldsp::wet::formatV(zldsp::wet::defaultV));
@@ -281,12 +290,12 @@ public:
         apvts = &parameters;
     }
 
-    static constexpr std::array<const char *, 12> getIDs() {
+    static constexpr std::array<const char *, 15> getIDs() {
         return {zldsp::effectIn::ID, zldsp::wet::ID, zldsp::autoGain::ID,
                 zldsp::lowSplit::ID, zldsp::highSplit::ID, zldsp::overSample::ID,
                 zldsp::styleLow::ID, zldsp::curveLow::ID,
                 zldsp::styleMid::ID, zldsp::curveMid::ID,
-                zldsp::styleHigh::ID, zldsp::curveHigh::ID};
+                zldsp::styleHigh::ID, zldsp::curveHigh::ID, zldsp::bandGainLow::ID, zldsp::bandGainMid::ID, zldsp::bandGainHigh::ID};
     }
 
     void addListeners() {

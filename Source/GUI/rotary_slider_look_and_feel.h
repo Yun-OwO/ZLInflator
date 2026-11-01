@@ -95,7 +95,7 @@ namespace zlinterface {
             auto labelArea{label.getLocalBounds().toFloat()};
             auto center = labelArea.getCentre();
             float labelFontSize = uiBase->getFontSize() > 0
-                                  ? uiBase->getFontSize() * FontHuge
+                                  ? uiBase->getFontSize() * FontNormal * 1.05f
                                   : labelArea.getHeight() * 0.6f;
             g.setFont(juce::Font(labelFontSize));
             float value = label.getText().getFloatValue();

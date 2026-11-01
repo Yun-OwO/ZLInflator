@@ -31,7 +31,8 @@ MainPanel::MainPanel(ZLInflatorAudioProcessor &p) :
             return nullptr;
         }, p.getSpectrumSource(), p.parameters, uiBase),
         meterPanel(p, uiBase),
-        footerPanel(p.parameters, uiBase) {
+        // the card page lives in the ui state tree, not with the audio parameters
+        footerPanel(p.parameters, p.states, uiBase) {
     // the bypass is the one global switch that has to stay in reach
     effectButton = std::make_unique<zlinterface::ButtonComponent>("Effect In", uiBase);
     effectAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
@@ -71,7 +72,8 @@ void MainPanel::resized() {
     }
 
     // the logo sits in the top left corner
-    const auto headerHeight = juce::jmin(inner.getHeight() * 0.12f, fontSize * 2.8f);
+    const auto headerHeight = juce::jmin(inner.getHeight() * 0.19f,
+                                         fontSize * (zlinterface::ControlRowHeight + .65f));
     auto headerBound = inner.removeFromTop(headerHeight);
     logoPanel.setBounds(headerBound.removeFromLeft(
             juce::jmin(headerBound.getWidth() * 0.22f, fontSize * 9.f)).toNearestInt());
@@ -80,7 +82,10 @@ void MainPanel::resized() {
 
     // the band controls are a strip along the bottom, the split knobs sit
     // between the bands they divide
-    const auto stripHeight = juce::jmin(inner.getHeight() * 0.36f, fontSize * 14.f);
+    // one row of style boxes plus the flat drag bars under them
+    const auto stripHeight = juce::jmin(inner.getHeight() * 0.42f,
+                                        fontSize * (zlinterface::ControlRowHeight
+                                                    + zlinterface::ControlCaptionHeight + 1.5f + .3f));
     auto bandBound = inner.removeFromBottom(stripHeight);
     bandPanel.setBounds(bandBound.reduced(fontSize * .2f, fontSize * .1f).toNearestInt());
 
@@ -94,7 +99,7 @@ void MainPanel::resized() {
     const auto plotBound = bandPlotComponent.getBounds().toFloat();
     const auto footerHeight = footerPanel.getPreferredHeight(plotBound.getHeight());
     const auto footerWidth = footerPanel.isExpanded()
-                             ? juce::jmin(plotBound.getWidth() * 0.62f, fontSize * 26.f)
+                             ? juce::jmin(plotBound.getWidth() * 0.55f, fontSize * 22.f)
                              : juce::jmin(plotBound.getWidth() * 0.3f, fontSize * 10.f);
     footerPanel.setBounds(juce::Rectangle<float>(plotBound.getRight() - footerWidth,
                                                  plotBound.getBottom() - footerHeight,

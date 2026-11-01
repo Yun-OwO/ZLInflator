@@ -16,13 +16,14 @@ namespace {
         if (bandBound.isEmpty()) {
             return;
         }
-        const auto boxHeight = bandBound.getHeight() * 0.34f;
-        box.setBounds(bandBound.removeFromTop(boxHeight).reduced(0.f, boxHeight * .08f).toNearestInt());
-        auto sliderBound = bandBound.reduced(0.f, fontSize * .1f);
-        // the linear slider keeps a 0.45 aspect ratio, so leave it enough room
-        const auto wantedHeight = juce::jmax(fontSize * 2.4f, sliderBound.getWidth() * 0.7f);
-        slider.setBounds(sliderBound.withSizeKeepingCentre(
-                sliderBound.getWidth(), juce::jmin(sliderBound.getHeight(), wantedHeight)).toNearestInt());
+        // a caption plus the control, at the height every box shaped control uses;
+        // the flat drag bar underneath keeps whatever is left
+        const auto controlRow = juce::jmin(bandBound.getHeight() * .55f,
+                                           fontSize * zlinterface::ControlRowHeight);
+        box.setBounds(bandBound.removeFromTop(controlRow).toNearestInt());
+        const auto sliderRow = juce::jmin(bandBound.getHeight(),
+                                          fontSize * (zlinterface::ControlCaptionHeight + 1.5f));
+        slider.setBounds(bandBound.removeFromTop(sliderRow).toNearestInt());
     }
 
     void layoutSplitKnob(juce::Rectangle<float> knobBound, zlinterface::RotarySliderComponent &knob,

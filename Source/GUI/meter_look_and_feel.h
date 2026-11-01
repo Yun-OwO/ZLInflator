@@ -42,7 +42,7 @@ namespace zlinterface {
                 auto localBound = bound.removeFromLeft(meterWidth);
                 localBound = localBound.withSizeKeepingCentre(.9f * localBound.getWidth(),
                                                               localBound.getHeight() - 0.1f * localBound.getWidth());
-                auto peakBound = localBound.removeFromTop(localBound.getHeight() * 0.08f);
+                auto peakBound = localBound.removeFromTop(localBound.getHeight() * 0.12f);
                 drawMeterPeakMax(g, peakMax[i], peakBound);
                 auto curveTL = false, curveTR = false, curveBL = false, curveBR = false;
                 if (i == 0) {

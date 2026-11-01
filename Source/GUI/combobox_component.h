@@ -43,9 +43,12 @@ namespace zlinterface {
 
         void resized() override {
             auto bound = getLocalBounds().toFloat();
-            auto labelBound = bound.removeFromTop(labelHeight * bound.getHeight());
-            label.setBounds(labelBound.toNearestInt());
-            comboBox.setBounds(bound.toNearestInt());
+            const auto captionHeight = juce::jmin(bound.getHeight(),
+                                                  uiBase->getFontSize() * zlinterface::ControlCaptionHeight);
+            label.setBounds(bound.removeFromTop(captionHeight).toNearestInt());
+            const auto boxHeight = juce::jmin(bound.getHeight(),
+                                              uiBase->getFontSize() * zlinterface::ControlHeight);
+            comboBox.setBounds(bound.withSizeKeepingCentre(bound.getWidth(), boxHeight).toNearestInt());
         }
 
         void paint(juce::Graphics &g) override {

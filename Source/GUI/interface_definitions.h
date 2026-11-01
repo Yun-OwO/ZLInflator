@@ -57,6 +57,16 @@ namespace zlinterface {
 
     auto inline const RefreshFreqHz = 60;
 
+    /** Height of the box itself, in units of the font size. Buttons and combo
+        boxes all use it, so a row of them lines up and every button matches. */
+    auto inline const ControlHeight = 2.4f;
+
+    /** Height of the caption that sits above a control, in units of the font size. */
+    auto inline const ControlCaptionHeight = 0.85f;
+
+    /** One caption plus one control: what a container should hand out per control. */
+    auto inline const ControlRowHeight = ControlHeight + ControlCaptionHeight;
+
     struct fillRoundedShadowRectangleArgs {
         float blurRadius = 0.5f;
         bool curveTopLeft = true, curveTopRight = true, curveBottomLeft = true, curveBottomRight = true;
