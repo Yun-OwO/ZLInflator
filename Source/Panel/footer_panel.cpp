@@ -76,15 +76,18 @@ namespace zlpanel {
         const auto fontSize = uiBase->getFontSize();
         // the strip ends where the column above the meters begins: the
         // oversampling cell is its last one, its caption on the caption line
-        const auto rightEdge = overSampleAnchorRight > 0.f && overSampleAnchorRight < bound.getRight()
-                               ? overSampleAnchorRight : bound.getRight();
+        const auto rightEdge = overSampleAnchorRight > 0.f
+                               ? juce::jmin(overSampleAnchorRight, bound.getRight()) : bound.getRight();
         const auto cellWidth = juce::jmin(fontSize * BoxColumnWidth, juce::jmax(0.f, rightEdge - bound.getX()));
         const auto captionHeight = fontSize * zlinterface::ControlCaptionHeight;
         const auto boxHeight = juce::jmin(fontSize * zlinterface::ControlHeight,
                                           juce::jmax(0.f, bound.getHeight() - captionHeight));
         setOverSampleBounds(rightEdge - cellWidth, bound.getY(), cellWidth, boxHeight);
         const auto knobsWidth = juce::jmax(0.f, rightEdge - cellWidth - bound.getX());
-        const auto knobBlockWidth = juce::jmin(knobsWidth, getPreferredWidth(fontSize));
+        // the knobs may spill over their share rather than get crushed, the box
+        // already holds the last column of the row
+        const auto knobBlockWidth = juce::jmin(juce::jmax(knobsWidth, fontSize * 3.f * KnobCellWidth),
+                                               getPreferredWidth(fontSize));
         auto knobBlock = juce::Rectangle<float>(bound.getX() + (knobsWidth - knobBlockWidth) * .5f,
                                                 bound.getY(), knobBlockWidth,
                                                 juce::jmin(bound.getHeight(), getPreferredHeight(fontSize)));

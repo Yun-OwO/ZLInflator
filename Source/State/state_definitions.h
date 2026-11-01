@@ -72,9 +72,9 @@ namespace zlstate {
     public:
         auto static constexpr ID = "window_h";
         auto static constexpr name = "NA";
-        inline static const int minV = 400;
-        inline static const int maxV = 960;
-        inline static const int defaultV = 520;
+        inline static const int minV = 480;
+        inline static const int maxV = 1100;
+        inline static const int defaultV = 640;
         inline auto static const range =
                 juce::NormalisableRange<float>(minV, maxV, 1.f);
     };

@@ -76,47 +76,51 @@ void MainPanel::resized() {
         return;
     }
 
-    // three rows: the header with the brand and the global controls, the
-    // figure, and the strip of band controls. The right hand column repeats the
-    // same rows: the oversampling cell ends the header row, the bypass and the
-    // auto gain switch stack under it, the meters line up with the figure
-    const auto headerHeight = juce::jmin(fontSize * zlinterface::KnobRowHeight,
-                                         inner.getHeight() * 0.26f);
-    // one row of style boxes plus the flat drag bars under them
-    const auto stripHeight = juce::jmin(inner.getHeight() * 0.42f,
+    // the strip of band controls runs along the bottom, the figure sits over it
+    // with the meters of the right column beside it, and the column carries the
+    // oversampling choice, the auto gain switch and the bypass switch above the
+    // meters, every control on the grid of a cap
+    const auto stripHeight = juce::jmin(inner.getHeight() * 0.34f,
                                         fontSize * (zlinterface::ControlRowHeight
                                                     + zlinterface::ControlCaptionHeight + 1.8f));
-    const auto plotHeight = juce::jmax(0.f, inner.getHeight() - headerHeight - stripHeight);
+    const auto cellHeight = juce::jmin(fontSize * zlinterface::KnobRowHeight,
+                                       (inner.getHeight() - stripHeight) * .28f);
+    const auto switchHeight = juce::jmin(cellHeight, (inner.getHeight() - stripHeight) * .105f);
+    const auto cellGap = fontSize * .05f;
 
     const auto cellWidth = juce::jmin(inner.getWidth() * 0.16f, fontSize * 4.6f);
     auto rightBound = inner.removeFromRight(cellWidth);
-    auto switchBound = rightBound.removeFromTop(headerHeight);
+    auto overSampleCell = rightBound.removeFromTop(cellHeight);
+    auto gainCell = rightBound.removeFromTop(switchHeight + cellGap);
+    auto bypassCell = rightBound.removeFromTop(switchHeight + cellGap);
+    // the meters run from the top of the figure to the top of the strip
+    const auto figureTop = bypassCell.getBottom();
+    const auto figureBottom = inner.getBottom() - stripHeight;
+    const auto plotHeight = juce::jmax(0.f, figureBottom - figureTop);
     auto meterBound = rightBound.removeFromTop(plotHeight);
 
-    // the oversampling choice ends the header row, the two switches stack right
-    // under it, the meters take the height of the figure
-    footerPanel.setOverSampleAnchor(switchBound.getRight());
+    // the oversampling choice ends the header row, the auto gain switch stacks
+    // right under it, so the pair reads like a style box over a curve bar
+    footerPanel.setOverSampleAnchor(overSampleCell.getRight());
+    compensationButton->setBounds(gainCell.withSizeKeepingCentre(
+            gainCell.getWidth(), juce::jmin(gainCell.getHeight(), fontSize * zlinterface::ControlHeight)
+    ).toNearestInt());
     {
-        // both switches keep the width of the oversampling cell they stack
-        // under, so the three read as one column
-        const auto buttonWidth = switchBound.getWidth();
-        const auto cellHeight = switchBound.getHeight() * .5f;
-        auto upperCell = switchBound.removeFromTop(cellHeight);
-        auto lowerCell = switchBound;
-        effectButton->setBounds(upperCell.withSizeKeepingCentre(
-                buttonWidth, juce::jmin(upperCell.getHeight() * .8f, cellHeight * .8f)).toNearestInt());
-        compensationButton->setBounds(lowerCell.withSizeKeepingCentre(
-                buttonWidth, juce::jmin(lowerCell.getHeight() * .8f, cellHeight * .8f)).toNearestInt());
+        const auto buttonWidth = juce::jmin(bypassCell.getWidth(), fontSize * 3.6f);
+        const auto buttonHeight = juce::jmin(bypassCell.getHeight(), fontSize * zlinterface::ControlHeight);
+        effectButton->setBounds(bypassCell.withSizeKeepingCentre(buttonWidth, buttonHeight).toNearestInt());
     }
 
     auto bandBound = inner.removeFromBottom(stripHeight);
     bandPanel.setBounds(bandBound.reduced(fontSize * .2f, fontSize * .1f).toNearestInt());
 
-    auto headerBound = inner.removeFromTop(headerHeight);
+    auto headerBound = inner.removeFromTop(cellHeight);
     logoPanel.setBounds(headerBound.removeFromLeft(
             juce::jmin(headerBound.getWidth() * 0.22f, fontSize * 9.f)).toNearestInt());
     footerPanel.setBounds(headerBound.reduced(fontSize * .2f, 0.f).toNearestInt());
 
     meterPanel.setBounds(meterBound.toNearestInt());
-    bandPlotComponent.setBounds(inner.reduced(fontSize * .2f, 0.f).toNearestInt());
+    bandPlotComponent.setBounds(juce::Rectangle<float>(inner.getX(), figureTop,
+                                                       inner.getWidth(), plotHeight)
+                                        .reduced(fontSize * .2f, 0.f).toNearestInt());
 }
