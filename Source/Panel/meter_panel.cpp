@@ -34,22 +34,34 @@ void MeterPanel::paint(juce::Graphics &) {}
 
 void MeterPanel::resized() {
     auto bound = getLocalBounds().toFloat();
-    const auto fontSize = uiBase->getFontSize();
-    // auto gain is a box shaped button: stacked under the oversampling choice
-    // at the bottom right corner, where the column of the strip ends
-    const auto buttonHeight = juce::jmin(fontSize * zlinterface::ControlRowHeight,
-                                         bound.getHeight() * 0.34f);
-    const auto buttonWidth = juce::jmin(bound.getWidth(), fontSize * 5.f);
-    auto buttonBound = juce::Rectangle<float>(bound.getRight() - buttonWidth,
-                                              bound.getBottom() - buttonHeight,
-                                              buttonWidth, buttonHeight);
-    if (!buttonBound.isEmpty()) {
-        compensationButton->setBounds(buttonBound.toNearestInt());
+    if (bound.getWidth() <= 0.f || bound.getHeight() <= 0.f) {
+        return;
     }
-    bound.removeFromBottom(buttonHeight + fontSize * .2f);
-    auto inputBound = bound.removeFromLeft(bound.getWidth() * 0.5f);
+    const auto fontSize = uiBase->getFontSize();
+    // auto gain is a box shaped button stacked under the oversampling choice:
+    // both keep the same size and share the column of the strip above
+    const auto boxWidth = juce::jmin(bound.getWidth(), fontSize * 6.f);
+    const auto captionHeight = fontSize * zlinterface::ControlCaptionHeight;
+    const auto boxHeight = juce::jmin(fontSize * zlinterface::ControlHeight,
+                                      juce::jmax(0.f, bound.getHeight() * .34f - captionHeight));
+    const auto columnRight = bound.getRight();
+    const auto bottom = bound.getBottom();
+    const auto blockHeight = captionHeight + boxHeight;
+    if (boxWidth > 0.f && blockHeight > 0.f) {
+        // the block keeps the caption row, the button lays itself out inside it
+        compensationButton->setBounds(juce::Rectangle<float>(columnRight - boxWidth,
+                                                             bottom - blockHeight,
+                                                             boxWidth, blockHeight).toNearestInt());
+    }
+    // the meters run the whole height above the auto gain block
+    auto meterArea = bound.withBottom(juce::jmax(bound.getY(),
+                                                 bottom - blockHeight - fontSize * .2f));
+    const auto meterWidth = juce::jmin(meterArea.getWidth() * .65f, fontSize * 3.6f);
+    auto meterBound = juce::Rectangle<float>(columnRight - boxWidth + (boxWidth - meterWidth) * .5f,
+                                             meterArea.getY(), meterWidth, meterArea.getHeight());
+    auto inputBound = meterBound.removeFromLeft(meterWidth * .5f);
     inputBackground.setBounds(inputBound.toNearestInt());
-    outputBackground.setBounds(bound.toNearestInt());
+    outputBackground.setBounds(meterBound.toNearestInt());
     inputMeter.setBounds(inputBound.toNearestInt());
-    outputMeter.setBounds(bound.toNearestInt());
+    outputMeter.setBounds(meterBound.toNearestInt());
 }

@@ -65,22 +65,6 @@ void MainPanel::resized() {
         return;
     }
 
-    // the header holds the brand, the bypass switch and two rows of global
-    // controls: the oversampling choice over the input, output and wet knobs
-    const auto headerHeight = juce::jmin(inner.getHeight() * 0.28f,
-                                         fontSize * (zlinterface::ControlRowHeight
-                                                     + zlinterface::ControlCaptionHeight
-                                                     + zlinterface::ControlRowHeight * 1.4f));
-    auto headerBound = inner.removeFromTop(headerHeight);
-    logoPanel.setBounds(headerBound.removeFromLeft(
-            juce::jmin(headerBound.getWidth() * 0.22f, fontSize * 9.f)).toNearestInt());
-    effectButton->setBounds(headerBound.removeFromLeft(
-            juce::jmin(headerBound.getWidth() * 0.16f, fontSize * 3.6f)).toNearestInt());
-
-    // the global controls fill the strip left over at the end of the header,
-    // right of the bypass switch and above the meters
-    footerPanel.setBounds(headerBound.reduced(fontSize * .2f, 0.f).toNearestInt());
-
     // the band controls are a strip along the bottom, the split knobs sit
     // between the bands they divide
     // one row of style boxes plus the flat drag bars under them
@@ -90,8 +74,23 @@ void MainPanel::resized() {
     auto bandBound = inner.removeFromBottom(stripHeight);
     bandPanel.setBounds(bandBound.reduced(fontSize * .2f, fontSize * .1f).toNearestInt());
 
-    // the meters keep the right edge, the figure takes what is left
-    auto meterBound = inner.removeFromRight(juce::jmin(inner.getWidth() * 0.13f, fontSize * 5.f));
-    meterPanel.setBounds(meterBound.reduced(fontSize * .2f, 0.f).toNearestInt());
+    // the meters keep the right edge, from the header down to the figure, so
+    // they read as the two long bars of the layout sketch
+    auto meterBound = inner.removeFromRight(juce::jmin(inner.getWidth() * 0.14f, fontSize * 5.f));
+    meterPanel.setBounds(meterBound.toNearestInt());
+
+    // the header holds the brand and the bypass switch, the global controls
+    // fill the strip between them and the meters
+    const auto headerHeight = juce::jmin(inner.getHeight() * 0.3f,
+                                         fontSize * (zlinterface::ControlRowHeight
+                                                     + zlinterface::ControlCaptionHeight
+                                                     + zlinterface::KnobRowHeight));
+    auto headerBound = inner.removeFromTop(headerHeight);
+    logoPanel.setBounds(headerBound.removeFromLeft(
+            juce::jmin(headerBound.getWidth() * 0.22f, fontSize * 9.f)).toNearestInt());
+    effectButton->setBounds(headerBound.removeFromLeft(
+            juce::jmin(headerBound.getWidth() * 0.16f, fontSize * 3.6f)).toNearestInt());
+    footerPanel.setBounds(headerBound.reduced(fontSize * .2f, 0.f).toNearestInt());
+
     bandPlotComponent.setBounds(inner.reduced(fontSize * .2f, 0.f).toNearestInt());
 }

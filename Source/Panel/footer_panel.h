@@ -34,6 +34,12 @@ namespace zlpanel {
 
         void resized() override;
 
+        /** the room the three knobs and the column of boxes need, so the main
+            panel can line the meters up under that column */
+        static float getPreferredWidth(float fontSize);
+
+        static float getPreferredHeight(float fontSize);
+
     private:
         juce::AudioProcessorValueTreeState &apvts;
 

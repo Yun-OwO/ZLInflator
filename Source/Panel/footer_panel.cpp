@@ -11,6 +11,11 @@
 #include "footer_panel.h"
 
 namespace zlpanel {
+    namespace {
+        constexpr float KnobCellWidth = 4.6f;
+        constexpr float BoxColumnWidth = 5.f;
+    }
+
     FooterPanel::FooterPanel(juce::AudioProcessorValueTreeState &audioParameters, zlinterface::UIBase &base) :
             apvts(audioParameters), uiBase(&base) {
         inputGain = std::make_unique<zlinterface::RotarySliderComponent>("In", base);
@@ -34,33 +39,51 @@ namespace zlpanel {
         juce::ignoreUnused(g);
     }
 
+    float FooterPanel::getPreferredWidth(float fontSize) {
+        return fontSize * (3.f * KnobCellWidth + BoxColumnWidth);
+    }
+
+    float FooterPanel::getPreferredHeight(float fontSize) {
+        return fontSize * zlinterface::KnobRowHeight;
+    }
+
     void FooterPanel::resized() {
         auto bound = getLocalBounds().toFloat();
         if (bound.getWidth() <= 0.f || bound.getHeight() <= 0.f) {
             return;
         }
         const auto fontSize = uiBase->getFontSize();
-        // one row of captions over one row of controls: the lowest edge of the
-        // oversampling box meets the knob dials, the captions line the title up
-        const auto knobRow = juce::jmin(fontSize * zlinterface::KnobRowHeight,
-                                        bound.getHeight(),
-                                        bound.getWidth() / 3.f * zlinterface::KnobRowHeight / zlinterface::KnobHeight);
-        const auto boxRow = juce::jmin(fontSize * zlinterface::ControlRowHeight,
-                                       juce::jmax(0.f, knobRow * zlinterface::ControlHeight / zlinterface::KnobHeight));
-        if (boxRow <= 0.f || knobRow <= 0.f) {
-            return;
-        }
-        // the knob cells are as wide as the caption of the oversampling box, so
-        // the four titles all sit on one line above their controls
-        const auto columnWidth = juce::jmin(bound.getWidth() / 4.f, fontSize * 5.f);
-        auto strip = juce::Rectangle<float>(
-                bound.getRight() - columnWidth * 4.f, bound.getY(), columnWidth * 4.f, knobRow);
-        overSample->setBounds(
-                strip.removeFromLeft(columnWidth).removeFromBottom(boxRow + fontSize * zlinterface::ControlCaptionHeight).toNearestInt());
-        auto knobBound = strip;
-        const auto unitWidth = knobBound.getWidth() / 3.f;
-        inputGain->setBounds(knobBound.removeFromLeft(unitWidth).toNearestInt());
-        outputGain->setBounds(knobBound.removeFromLeft(unitWidth).toNearestInt());
-        wet->setBounds(knobBound.toNearestInt());
+        // the three knobs and the column of boxes are centred as one block, so
+        // their captions share a line whether the strip is wider or narrower
+        const auto blockWidth = juce::jmin(bound.getWidth(),
+                                           getPreferredWidth(fontSize));
+        auto block = juce::Rectangle<float>(bound.getCentreX() - blockWidth * .5f,
+                                                  bound.getY(), blockWidth,
+                                                  juce::jmin(bound.getHeight(), getPreferredHeight(fontSize)));
+        // the boxes are as tall as every other control, the knobs as wide as
+        // the room the block leaves for them
+        const auto boxHeight = juce::jmin(fontSize * zlinterface::ControlRowHeight,
+                                          block.getHeight() * .6f);
+        auto boxBound = block.removeFromRight(juce::jmin(block.getWidth() / 4.f,
+                                                         fontSize * BoxColumnWidth));
+        const auto cellWidth = block.getWidth() / 3.f;
+        // the caption and the box are placed by hand: the caption shares the
+        // row of the knob captions, the box takes the standard control height
+        const auto captionHeight = fontSize * zlinterface::ControlCaptionHeight;
+        auto overSampleBound = juce::Rectangle<float>(boxBound.getX(), block.getY(),
+                                                      boxBound.getWidth(),
+                                                      captionHeight + boxHeight);
+        overSample->setBounds(overSampleBound.toNearestInt());
+        overSample->getLabel().setBounds(
+                juce::Rectangle<int>(0, 0, juce::roundToInt(boxBound.getWidth()),
+                                     juce::roundToInt(captionHeight)));
+        overSample->getComboBox().setBounds(
+                juce::Rectangle<int>(0, juce::roundToInt(captionHeight),
+                                     juce::roundToInt(boxBound.getWidth()),
+                                     juce::roundToInt(boxHeight)));
+        const auto unitWidth = cellWidth;
+        inputGain->setBounds(block.removeFromLeft(unitWidth).toNearestInt());
+        outputGain->setBounds(block.removeFromLeft(unitWidth).toNearestInt());
+        wet->setBounds(block.toNearestInt());
     }
 }
