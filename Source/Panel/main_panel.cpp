@@ -20,6 +20,58 @@ namespace {
     }
 }
 
+// ----------------------------------------------------------------------------
+ChoiceButton::ChoiceButton(ZLInflatorAudioProcessor &p, const juce::String &labelText,
+                           const std::string &parameterIDToUse, zlinterface::UIBase &base) :
+        ButtonComponent(labelText, base),
+        parameters(p.parameters), parameter(p.parameters.getParameter(parameterIDToUse)),
+        parameterID(parameterIDToUse) {
+    juce::ignoreUnused(parameterID);
+    numChoices = parameter != nullptr ? parameter->getNumSteps() : 0;
+    getButton().setClickingTogglesState(false);
+    // the toggle child swallows the clicks, so step from its own callback: it
+    // fires on the release inside the cell and leaves the modifier keys at hand
+    getButton().onClick = [this] {
+        step(juce::ModifierKeys::currentModifiers.isRightButtonDown() ? -1 : 1);
+    };
+    refresh();
+    parameters.addParameterListener(parameterIDToUse, this);
+}
+
+ChoiceButton::~ChoiceButton() {
+    parameters.removeParameterListener(parameterID, this);
+}
+
+void ChoiceButton::parameterChanged(const juce::String &, float) {
+    triggerAsyncUpdate();
+}
+
+void ChoiceButton::handleAsyncUpdate() {
+    refresh();
+}
+
+void ChoiceButton::mouseWheelMove(const juce::MouseEvent &, const juce::MouseWheelDetails &details) {
+    step(details.deltaY >= 0.f ? 1 : -1);
+}
+
+void ChoiceButton::step(int direction) {
+    if (parameter == nullptr || numChoices <= 0) {
+        return;
+    }
+    const auto current = juce::roundToInt(parameter->convertFrom0to1(parameter->getValue()));
+    const auto next = (current + direction + numChoices) % numChoices;
+    parameter->setValueNotifyingHost(parameter->convertTo0to1(static_cast<float>(next)));
+    refresh();
+}
+
+void ChoiceButton::refresh() {
+    if (parameter == nullptr) {
+        return;
+    }
+    setCaption(parameter->getCurrentValueAsText());
+    repaint();
+}
+
 MainPanel::MainPanel(ZLInflatorAudioProcessor &p) :
         uiBase(),
         logoPanel(p, uiBase),
@@ -48,6 +100,8 @@ MainPanel::MainPanel(ZLInflatorAudioProcessor &p) :
     compensationAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
             p.parameters, zldsp::autoGain::ID, compensationButton->getButton());
     addAndMakeVisible(*compensationButton);
+    overSampleButton = std::make_unique<ChoiceButton>(p, "Over Sampling", zldsp::overSample::ID, uiBase);
+    addAndMakeVisible(*overSampleButton);
     addAndMakeVisible(logoPanel);
     addAndMakeVisible(bandPanel);
     addAndMakeVisible(bandPlotComponent);
@@ -76,54 +130,62 @@ void MainPanel::resized() {
         return;
     }
 
-    // the strip of band controls runs along the bottom, the figure sits over it
-    // with the meters of the right column beside it, and the column carries the
-    // oversampling choice, the auto gain switch and the bypass switch above the
-    // meters, every control on the grid of a cap
+    // the strip of band controls runs along the bottom, the header row of the
+    // global knobs sits at the top, and the figure fills what is left over it
+    // between the two right hand columns: the oversampling switch over the auto
+    // gain switch, and the bypass switch over the meters
     const auto stripHeight = juce::jmin(inner.getHeight() * 0.34f,
                                         fontSize * (zlinterface::ControlRowHeight
                                                     + zlinterface::ControlCaptionHeight + 1.8f));
-    const auto cellHeight = juce::jmin(fontSize * zlinterface::KnobRowHeight,
-                                       (inner.getHeight() - stripHeight) * .28f);
-    const auto switchHeight = juce::jmin(cellHeight, (inner.getHeight() - stripHeight) * .105f);
+    const auto headerHeight = juce::jmin(fontSize * zlinterface::KnobRowHeight,
+                                         (inner.getHeight() - stripHeight) * .28f);
+    // one switch cell is one row of the very same grid the band strip uses
+    const auto switchHeight = juce::jmin(fontSize * zlinterface::ControlHeight,
+                                         (inner.getHeight() - stripHeight) * .18f);
     const auto cellGap = fontSize * .05f;
+    const auto figureBottom = inner.getBottom() - stripHeight;
 
-    // the right hand side is two columns: the oversampling choice with the auto
-    // gain switch under it, and the bypass switch with the meters under it
-    const auto cellWidth = juce::jmin(inner.getWidth() * 0.15f, fontSize * 4.4f);
-    auto rightBound = inner.removeFromRight(cellWidth * 2.f + fontSize * .3f);
-    auto overSampleColumn = rightBound.removeFromLeft(cellWidth);
+    const auto switchCellWidth = juce::jmin(inner.getWidth() * 0.15f, fontSize * 4.4f);
+    auto rightBound = inner.removeFromRight(switchCellWidth * 2.f + fontSize * .3f);
+    auto overSampleColumn = rightBound.removeFromLeft(switchCellWidth);
     rightBound.removeFromLeft(fontSize * .3f);
     auto meterColumn = rightBound;
-    auto overSampleCell = overSampleColumn.removeFromTop(cellHeight);
-    auto gainBound = overSampleColumn.removeFromTop(switchHeight + cellGap);
+    auto overSampleCell = overSampleColumn.removeFromTop(switchHeight);
+    auto gainCell = overSampleColumn.removeFromTop(switchHeight + cellGap);
     auto bypassCell = meterColumn.removeFromTop(switchHeight + cellGap);
-    // the meters run from the top of the figure to the top of the strip
-    const auto figureTop = juce::jmax(gainBound.getBottom(), bypassCell.getBottom());
-    const auto figureBottom = inner.getBottom() - stripHeight;
+    // the meters take the height of the figure, so both end on the strip and
+    // start on the line the switches of the columns end on
+    const auto figureTop = juce::jmax(inner.getY() + headerHeight,
+                                      juce::jmax(gainCell.getBottom(), bypassCell.getBottom()));
     const auto plotHeight = juce::jmax(0.f, figureBottom - figureTop);
-    auto meterBound = meterColumn.removeFromTop(plotHeight);
 
-    footerPanel.setOverSampleAnchor(overSampleCell.getRight());
-    compensationButton->setBounds(gainBound.withSizeKeepingCentre(
-            gainBound.getWidth(), juce::jmin(gainBound.getHeight(), fontSize * zlinterface::ControlHeight)
-    ).toNearestInt());
+    overSampleButton->setBounds(overSampleCell.withSizeKeepingCentre(
+            switchCellWidth, switchHeight).toNearestInt());
+    compensationButton->setBounds(gainCell.withSizeKeepingCentre(
+            switchCellWidth, switchHeight).toNearestInt());
     {
         const auto buttonWidth = juce::jmin(bypassCell.getWidth(), fontSize * 3.6f);
-        const auto buttonHeight = juce::jmin(bypassCell.getHeight(), fontSize * zlinterface::ControlHeight);
-        effectButton->setBounds(bypassCell.withSizeKeepingCentre(buttonWidth, buttonHeight).toNearestInt());
+        effectButton->setBounds(bypassCell.withSizeKeepingCentre(buttonWidth, switchHeight).toNearestInt());
     }
+    meterPanel.setBounds(juce::Rectangle<float>(meterColumn.getX(), figureTop,
+                                                meterColumn.getWidth(), plotHeight).toNearestInt());
+    bandPlotComponent.setBounds(juce::Rectangle<float>(inner.getX(), figureTop,
+                                                       inner.getWidth(), plotHeight)
+                                        .reduced(fontSize * .2f, 0.f).toNearestInt());
 
     auto bandBound = inner.removeFromBottom(stripHeight);
     bandPanel.setBounds(bandBound.reduced(fontSize * .2f, fontSize * .1f).toNearestInt());
 
-    auto headerBound = inner.removeFromTop(cellHeight);
+    auto headerBound = inner.removeFromTop(headerHeight);
     logoPanel.setBounds(headerBound.removeFromLeft(
             juce::jmin(headerBound.getWidth() * 0.22f, fontSize * 9.f)).toNearestInt());
-    footerPanel.setBounds(headerBound.reduced(fontSize * .2f, 0.f).toNearestInt());
+    {
+        // the knobs keep a column each of the very same width the band strip
+        // gives them, so the header reads as the first row of that grid
+        const auto knobWidth = juce::jmin(headerBound.getWidth(), fontSize * 3.f * 4.6f);
+        footerPanel.setBounds(headerBound.withSizeKeepingCentre(
+                knobWidth, juce::jmin(headerBound.getHeight(), footerPanel.getPreferredHeight(fontSize))
+        ).toNearestInt());
+    }
 
-    meterPanel.setBounds(meterBound.toNearestInt());
-    bandPlotComponent.setBounds(juce::Rectangle<float>(inner.getX(), figureTop,
-                                                       inner.getWidth(), plotHeight)
-                                        .reduced(fontSize * .2f, 0.f).toNearestInt());
 }

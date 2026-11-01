@@ -36,7 +36,9 @@ namespace zlinterface {
             auto meterWidth = bound.getWidth() / static_cast<float>(rms.size());
             numberBound = numberBound.withTrimmedTop(.05f * meterWidth);
             numberBound = numberBound.withTrimmedBottom(.05f * meterWidth);
-            numberBound = numberBound.withTrimmedTop(.08f * numberBound.getHeight());
+            // the peak reading takes the head of the column, so the scale starts
+            // under it instead of crossing it
+            numberBound = numberBound.withTrimmedTop(.18f * numberBound.getHeight());
             drawMeterNumbers(g, numberBound);
             for (size_t i = 0; i < peakMax.size(); ++i) {
                 auto localBound = bound.removeFromLeft(meterWidth);

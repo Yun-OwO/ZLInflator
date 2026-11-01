@@ -23,6 +23,36 @@ You should have received a copy of the GNU General Public License along with ZLI
 #include "../GUI/band_plot_component.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 
+/** A cell that steps through a choice parameter with every click and turns
+    with the mouse wheel, the way a compact multi way switch works. */
+class ChoiceButton : public zlinterface::ButtonComponent,
+                     private juce::AudioProcessorValueTreeState::Listener,
+                     private juce::AsyncUpdater {
+public:
+    ChoiceButton(ZLInflatorAudioProcessor &p, const juce::String &labelText, const std::string &parameterID,
+                 zlinterface::UIBase &base);
+
+    ~ChoiceButton() override;
+
+    void parameterChanged(const juce::String &parameterID, float newValue) override;
+
+    void handleAsyncUpdate() override;
+
+    void mouseWheelMove(const juce::MouseEvent &, const juce::MouseWheelDetails &) override;
+
+private:
+    void step(int direction);
+
+    void refresh();
+
+    juce::AudioProcessorValueTreeState &parameters;
+    juce::RangedAudioParameter *parameter;
+    const juce::String parameterID;
+    int numChoices = 0;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ChoiceButton)
+};
+
 class MainPanel : public juce::Component {
 public:
     explicit MainPanel(ZLInflatorAudioProcessor &p);
@@ -42,6 +72,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> effectAttachment;
     std::unique_ptr<zlinterface::ButtonComponent> compensationButton;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> compensationAttachment;
+    std::unique_ptr<ChoiceButton> overSampleButton;
 
     zlpanel::BandPanel bandPanel;
     zlinterface::BandPlotComponent bandPlotComponent;

@@ -26,13 +26,17 @@ namespace zlinterface {
                               bool shouldDrawButtonAsDown) override {
             juce::ignoreUnused(shouldDrawButtonAsDown);
             auto bounds = button.getLocalBounds().toFloat();
+            const auto pillHeight = bounds.getHeight();
             // draw button
             bounds = uiBase->fillRoundedShadowRectangle(g, bounds, uiBase->getFontSize() * 0.5f, {});
             uiBase->fillRoundedInnerShadowRectangle(g, bounds, uiBase->getFontSize() * 0.5f, {.blurRadius=0.45f, .flip=true});
             // a caption replaces the ON/OFF pair for buttons that carry their own text
             if (caption.isNotEmpty()) {
                 g.setColour(editable.load() ? uiBase->getTextColor() : uiBase->getTextInactiveColor());
-                g.setFont(juce::jmax(bounds.getHeight() * 0.34f, captionFontSize));
+                // the caption is drawn on the pill, so its size follows the pill
+                // before the shadows ate into the bounds
+                g.setFont(juce::jmax(uiBase->getFontSize() > 0 ? uiBase->getFontSize() * FontNormal
+                                                              : pillHeight * 0.35f, captionFontSize));
                 auto textWidth = g.getCurrentFont().getStringWidthFloat(caption);
                 if (textWidth > bounds.getWidth() * 0.86f && textWidth > 0) {
                     g.setFont(g.getCurrentFont().withHeight(g.getCurrentFont().getHeight()

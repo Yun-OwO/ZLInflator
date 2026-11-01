@@ -11,8 +11,6 @@
 #ifndef ZLINFLATOR_FOOTER_PANEL_H
 #define ZLINFLATOR_FOOTER_PANEL_H
 
-#include "../GUI/button_component.h"
-#include "../GUI/combobox_component.h"
 #include "../GUI/rotary_slider_component.h"
 #include "../DSP/dsp_defines.h"
 #include "../State/state_definitions.h"
@@ -21,10 +19,8 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 namespace zlpanel {
-    /** The global controls that belong to no single band: the input and output
-        trim, the wet mix, the oversampling choice and the auto gain switch.
-        They share the header strip left of the meters, the switch stacks under
-        the oversampling choice in the column right of the meters. */
+    /** The global trim of every band at once: the input and output gain and the
+        wet mix. They share the header strip left of the meters. */
     class FooterPanel : public juce::Component {
     public:
         FooterPanel(juce::AudioProcessorValueTreeState &audioParameters, zlinterface::UIBase &base);
@@ -35,16 +31,9 @@ namespace zlpanel {
 
         void resized() override;
 
-        /** the room the three knobs and the column of boxes need, so the main
-            panel can line the meters up under that column */
+        /** the room the three knobs need, so the main panel can line the
+            header up with them */
         static float getPreferredWidth(float fontSize);
-
-        /** Makes the oversampling cell part of the strip but anchored on the
-            right hand column: the header row ends with it, above the meters. */
-        void setOverSampleAnchor(float rightEdge);
-
-        /** Places the oversampling cell as part of the strip. */
-        void setOverSampleBounds(float x, float y, float width, float boxHeight);
 
         static float getPreferredHeight(float fontSize);
 
@@ -52,17 +41,11 @@ namespace zlpanel {
         juce::AudioProcessorValueTreeState &apvts;
 
         std::unique_ptr<zlinterface::RotarySliderComponent> inputGain, outputGain, wet;
-        std::unique_ptr<zlinterface::ComboboxComponent> overSample;
-        // the knobs carry their own captions, the box takes its name from the parameter
         std::array<std::unique_ptr<zlinterface::RotarySliderComponent> *, 3> knobList{
                 &inputGain, &outputGain, &wet};
-        std::array<std::unique_ptr<zlinterface::ComboboxComponent> *, 1> boxList{&overSample};
-        std::array<std::string, 1> boxIDs{zldsp::overSample::ID};
         juce::OwnedArray<juce::AudioProcessorValueTreeState::SliderAttachment> sliderAttachments;
-        juce::OwnedArray<juce::AudioProcessorValueTreeState::ComboBoxAttachment> boxAttachments;
 
         zlinterface::UIBase *uiBase;
-        float overSampleAnchorRight = 0.f;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FooterPanel)
     };
