@@ -43,9 +43,13 @@ namespace zlinterface {
 
         void resized() override {
             auto bound = getLocalBounds().toFloat();
-            auto boundMinWH = juce::jmin(bound.getWidth(), bound.getHeight() - uiBase->getFontSize() * FontHuge);
-            bound = bound.withSizeKeepingCentre(boundMinWH, boundMinWH + uiBase->getFontSize() * FontHuge);
-            auto textBound = bound.removeFromTop(uiBase->getFontSize() * FontHuge);
+            // the caption is as tall as every other control's caption, so the
+            // dial keeps the room it would otherwise lose to a big title
+            const auto captionHeight = juce::jmin(bound.getHeight(),
+                                                  uiBase->getFontSize() * ControlCaptionHeight);
+            auto boundMinWH = juce::jmin(bound.getWidth(), bound.getHeight() - captionHeight);
+            bound = bound.withSizeKeepingCentre(boundMinWH, boundMinWH + captionHeight);
+            auto textBound = bound.removeFromTop(captionHeight);
             label.setBounds(textBound.toNearestInt());
             auto bounds = bound;
             auto radius = juce::jmin(bounds.getWidth(), bounds.getHeight()) * 0.9f;

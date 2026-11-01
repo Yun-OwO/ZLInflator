@@ -11,116 +11,53 @@
 #include "footer_panel.h"
 
 namespace zlpanel {
-    FooterPanel::FooterPanel(juce::AudioProcessorValueTreeState &audioParameters, juce::AudioProcessorValueTreeState &uiParameters, zlinterface::UIBase &base) :
-            uiBase(base), apvts(audioParameters), uiApvts(uiParameters) {
-        // the card is narrow, so the three knobs carry short captions of their own
-        // instead of the parameter names the shared helper would paste on
+    FooterPanel::FooterPanel(juce::AudioProcessorValueTreeState &audioParameters, zlinterface::UIBase &base) :
+            apvts(audioParameters), uiBase(&base) {
         inputGain = std::make_unique<zlinterface::RotarySliderComponent>("In", base);
         outputGain = std::make_unique<zlinterface::RotarySliderComponent>("Out", base);
         wet = std::make_unique<zlinterface::RotarySliderComponent>("Wet", base);
-        addAndMakeVisible(*inputGain);
-        addAndMakeVisible(*outputGain);
-        addAndMakeVisible(*wet);
+        for (auto *knob : knobList) {
+            addAndMakeVisible(knob->get());
+        }
         sliderAttachments.add(new juce::AudioProcessorValueTreeState::SliderAttachment(
-                audioParameters, zldsp::inputGain::ID, inputGain->getSlider()));
+                apvts, zldsp::inputGain::ID, inputGain->getSlider()));
         sliderAttachments.add(new juce::AudioProcessorValueTreeState::SliderAttachment(
-                audioParameters, zldsp::outputGain::ID, outputGain->getSlider()));
+                apvts, zldsp::outputGain::ID, outputGain->getSlider()));
         sliderAttachments.add(new juce::AudioProcessorValueTreeState::SliderAttachment(
-                audioParameters, zldsp::wet::ID, wet->getSlider()));
-        zlpanel::attachBoxes(*this, std::array{&overSample}, boxAttachments,
-                             overSampleIDs, audioParameters, base);
-        // the card title button, labelled by the page it opens
-        foldButton = std::make_unique<SettingButton>("Settings", base);
-        foldButton->getButton().onClick = [this]() {
-            // the page state is stored, so the card opens the way it was left
-            if (auto *parameter = uiApvts.getParameter(zlstate::uiFooter::ID)) {
-                parameter->setValueNotifyingHost(parameter->convertTo0to1(settingPage ? 0.f : 1.f));
-            }
-        };
-        addAndMakeVisible(*foldButton);
-
-        uiApvts.addParameterListener(zlstate::uiFooter::ID, this);
-        parameterChanged(zlstate::uiFooter::ID, uiApvts.getRawParameterValue(zlstate::uiFooter::ID)->load());
+                apvts, zldsp::wet::ID, wet->getSlider()));
+        zlpanel::attachBoxes(*this, boxList, boxAttachments, boxIDs, apvts, base);
     }
 
-    FooterPanel::~FooterPanel() {
-        uiApvts.removeParameterListener(zlstate::uiFooter::ID, this);
-    }
+    FooterPanel::~FooterPanel() = default;
 
     void FooterPanel::paint(juce::Graphics &g) {
-        const auto bound = getLocalBounds().toFloat();
-        const auto fontSize = uiBase.getFontSize();
-        uiBase.fillRoundedShadowRectangle(g, bound, fontSize * .5f,
-                                          {.blurRadius=0.6f, .mainColour=uiBase.getBackgroundColor()});
+        juce::ignoreUnused(g);
     }
 
     void FooterPanel::resized() {
         auto bound = getLocalBounds().toFloat();
-        const auto fontSize = uiBase.getFontSize();
-        auto inner = bound.reduced(fontSize * .7f, fontSize * .28f);
-        if (inner.getWidth() <= 0 || inner.getHeight() <= 0) {
+        if (bound.getWidth() <= 0.f || bound.getHeight() <= 0.f) {
             return;
         }
-        inputGain->setVisible(settingPage);
-        outputGain->setVisible(settingPage);
-        wet->setVisible(settingPage);
-        overSample->setVisible(settingPage);
-
-        const auto narrow = inner.getWidth() < fontSize * 16.f;
-        if (!settingPage) {
-            // folded: the card is just the title button
-            auto foldBound = narrow
-                             ? inner
-                             : inner.removeFromRight(juce::jmin(inner.getWidth() * .3f, fontSize * 6.5f));
-            foldButton->setTitle("Settings");
-            foldButton->setCaptionFontSize(fontSize * zlinterface::FontNormal);
-            foldButton->setBounds(foldBound.withSizeKeepingCentre(
-                    foldBound.getWidth(),
-                    juce::jmin(foldBound.getHeight(), fontSize * zlinterface::ControlRowHeight)).toNearestInt());
+        const auto fontSize = uiBase->getFontSize();
+        // the oversampling choice reads as one more box shaped control, capped
+        // so the knobs under it keep room for caption, dial and value
+        const auto boxRow = juce::jmin(bound.getHeight() * .42f,
+                                       fontSize * zlinterface::ControlRowHeight);
+        overSample->setBounds(bound.removeFromTop(boxRow).toNearestInt());
+        bound.removeFromTop(fontSize * .12f);
+        // the knob component sizes its caption against the cell height and its
+        // dial against min(width, height), so a squat cell gives a tiny dial:
+        // only the caption row is squeezed, the dial keeps the room it needs
+        const auto knobSize = juce::jmin(fontSize * zlinterface::ControlRowHeight * 1.4f,
+                                         bound.getWidth() / 3.f);
+        if (knobSize <= 0.f) {
             return;
         }
-
-        // open: the three global knobs take the room on the left, the sample
-        // rate choice and the close button stack on the right
-        auto rightBound = inner.removeFromRight(juce::jmin(inner.getWidth() * .34f, fontSize * 8.5f));
-        auto foldBound = rightBound.removeFromBottom(
-                juce::jmin(rightBound.getHeight() * .5f, fontSize * zlinterface::ControlRowHeight));
-        foldButton->setTitle("Close");
-        foldButton->setCaptionFontSize(fontSize * zlinterface::FontNormal);
-        foldButton->setBounds(foldBound.toNearestInt());
-        // the combo sits at the same height as the caption and box of the band panel,
-        // so every button in the editor reads the same size
-        overSample->setBounds(rightBound.removeFromTop(
-                juce::jmin(rightBound.getHeight(), fontSize * zlinterface::ControlRowHeight)).toNearestInt());
-
-        inner.removeFromRight(fontSize * .5f);
-        const auto unitWidth = inner.getWidth() / 3.f;
-        inputGain->setBounds(inner.removeFromLeft(unitWidth).toNearestInt());
-        outputGain->setBounds(inner.removeFromLeft(unitWidth).toNearestInt());
-        wet->setBounds(inner.toNearestInt());
-    }
-
-    float FooterPanel::getPreferredHeight(float totalHeight) const {
-        const auto fontSize = uiBase.getFontSize();
-        if (!settingPage) {
-            // one row of control, the same height as any other button
-            return juce::jmin(totalHeight * .34f,
-                              fontSize * (zlinterface::ControlRowHeight + .6f));
-        }
-        return juce::jmin(totalHeight * .8f, fontSize * zlinterface::ControlRowHeight * 2.6f);
-    }
-
-    void FooterPanel::parameterChanged(const juce::String &parameterID, float) {
-        if (parameterID == zlstate::uiFooter::ID) {
-            const auto value = uiApvts.getRawParameterValue(zlstate::uiFooter::ID);
-            settingPage = value != nullptr && value->load() > .5f;
-            // the title button reads "Close" while the settings are open
-            if (foldButton != nullptr) {
-                foldButton->setTitle(settingPage ? "Close" : "Settings");
-            }
-            if (onExpandChanged) {
-                onExpandChanged();
-            }
-        }
+        auto knobBound = juce::Rectangle<float>(bound.getX(), bound.getY(), knobSize * 3.f, knobSize);
+        const auto unitWidth = knobSize;
+        inputGain->setBounds(knobBound.removeFromLeft(unitWidth).toNearestInt());
+        outputGain->setBounds(knobBound.removeFromLeft(unitWidth).toNearestInt());
+        wet->setBounds(knobBound.toNearestInt());
     }
 }

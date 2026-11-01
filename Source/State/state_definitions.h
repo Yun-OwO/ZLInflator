@@ -113,18 +113,10 @@ namespace zlstate {
         }
     };
 
-    class uiFooter : public BoolParameters<uiFooter> {
-    public:
-        auto static constexpr ID = "ui_footer";
-        auto static constexpr name = "NA";
-        auto static constexpr defaultV = false;
-    };
-
     inline juce::AudioProcessorValueTreeState::ParameterLayout getParameterLayout() {
         juce::AudioProcessorValueTreeState::ParameterLayout layout;
         layout.add(uiStyle::get(false),
-                   windowW::get(false), windowH::get(false),
-                   uiFooter::get(false));
+                   windowW::get(false), windowH::get(false));
         return layout;
     }
 }

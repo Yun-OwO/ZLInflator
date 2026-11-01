@@ -34,9 +34,11 @@ void MeterPanel::paint(juce::Graphics &) {}
 
 void MeterPanel::resized() {
     auto bound = getLocalBounds().toFloat();
-    // the auto gain button keeps the same height as every other button
+    // the auto gain button keeps the same height as every other button,
+    // and sits as far down as a knob or combo box in the strip above it
     auto buttonBound = bound.removeFromTop(juce::jmin(bound.getHeight() * 0.3f,
-                                                      uiBase->getFontSize() * zlinterface::ControlRowHeight));
+                                                      uiBase->getFontSize() * zlinterface::ControlCaptionHeight));
+    bound.removeFromTop(uiBase->getFontSize() * zlinterface::ControlHeight);
     buttonBound = buttonBound.withSizeKeepingCentre(buttonBound.getWidth() * 0.8333f, buttonBound.getHeight());
     compensationButton->setBounds(buttonBound.toNearestInt());
     auto inputBound = bound.removeFromLeft(bound.getWidth() * 0.5f);

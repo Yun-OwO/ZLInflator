@@ -31,8 +31,7 @@ MainPanel::MainPanel(ZLInflatorAudioProcessor &p) :
             return nullptr;
         }, p.getSpectrumSource(), p.parameters, uiBase),
         meterPanel(p, uiBase),
-        // the card page lives in the ui state tree, not with the audio parameters
-        footerPanel(p.parameters, p.states, uiBase) {
+        footerPanel(p.parameters, uiBase) {
     // the bypass is the one global switch that has to stay in reach
     effectButton = std::make_unique<zlinterface::ButtonComponent>("Effect In", uiBase);
     effectAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
@@ -43,11 +42,6 @@ MainPanel::MainPanel(ZLInflatorAudioProcessor &p) :
     addAndMakeVisible(bandPlotComponent);
     addAndMakeVisible(meterPanel);
     addAndMakeVisible(footerPanel);
-    // the card floats above the figure
-    footerPanel.toFront(false);
-    footerPanel.onExpandChanged = [this]() {
-        resized();
-    };
 }
 
 MainPanel::~MainPanel() = default;
@@ -71,14 +65,21 @@ void MainPanel::resized() {
         return;
     }
 
-    // the logo sits in the top left corner
-    const auto headerHeight = juce::jmin(inner.getHeight() * 0.19f,
-                                         fontSize * (zlinterface::ControlRowHeight + .65f));
+    // the header holds the brand, the bypass switch and two rows of global
+    // controls: the oversampling choice over the input, output and wet knobs
+    const auto headerHeight = juce::jmin(inner.getHeight() * 0.28f,
+                                         fontSize * (zlinterface::ControlRowHeight
+                                                     + zlinterface::ControlCaptionHeight
+                                                     + zlinterface::ControlRowHeight * 1.4f));
     auto headerBound = inner.removeFromTop(headerHeight);
     logoPanel.setBounds(headerBound.removeFromLeft(
             juce::jmin(headerBound.getWidth() * 0.22f, fontSize * 9.f)).toNearestInt());
     effectButton->setBounds(headerBound.removeFromLeft(
             juce::jmin(headerBound.getWidth() * 0.16f, fontSize * 3.6f)).toNearestInt());
+
+    // the global controls fill the strip left over at the end of the header,
+    // right of the bypass switch and above the meters
+    footerPanel.setBounds(headerBound.reduced(fontSize * .2f, 0.f).toNearestInt());
 
     // the band controls are a strip along the bottom, the split knobs sit
     // between the bands they divide
@@ -93,15 +94,4 @@ void MainPanel::resized() {
     auto meterBound = inner.removeFromRight(juce::jmin(inner.getWidth() * 0.13f, fontSize * 5.f));
     meterPanel.setBounds(meterBound.reduced(fontSize * .2f, 0.f).toNearestInt());
     bandPlotComponent.setBounds(inner.reduced(fontSize * .2f, 0.f).toNearestInt());
-
-    // the floating card hangs over the bottom right corner of the figure,
-    // small while the settings are folded away and wide when they are open
-    const auto plotBound = bandPlotComponent.getBounds().toFloat();
-    const auto footerHeight = footerPanel.getPreferredHeight(plotBound.getHeight());
-    const auto footerWidth = footerPanel.isExpanded()
-                             ? juce::jmin(plotBound.getWidth() * 0.55f, fontSize * 22.f)
-                             : juce::jmin(plotBound.getWidth() * 0.3f, fontSize * 10.f);
-    footerPanel.setBounds(juce::Rectangle<float>(plotBound.getRight() - footerWidth,
-                                                 plotBound.getBottom() - footerHeight,
-                                                 footerWidth, footerHeight).toNearestInt());
 }
