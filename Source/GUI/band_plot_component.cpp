@@ -13,6 +13,11 @@ You should have received a copy of the GNU General Public License along with ZLI
 
 #include "band_plot_component.h"
 
+namespace {
+    // keep in step with the per band width of WaveShaper
+    constexpr std::array<float, 3> bandSpreadWidth{.05f, .08f, .12f};
+}
+
 namespace zlinterface {
     BandPlotComponent::BandPlotComponent(std::function<const shaper::BandShaper<float> *(size_t)> shaperGetter,
                                          SpectrumSource<float> *spectrumSource,
@@ -181,14 +186,19 @@ namespace zlinterface {
                         std::array<juce::Point<float>, steps + 1> points[2];
                         const auto traceCount = split ? 2 : 1;
                         for (int trace = 0; trace < traceCount; ++trace) {
-                            const auto channelGain = juce::jmax(.05f, trace == 0
-                                                                             ? 1.f - spread * .75f
-                                                                             : 1.f + spread * .75f);
+                            // the two transfer functions the dsp applies: the
+                            // side is driven harder and carries the width, the
+                            // mid keeps its own
+                            const auto driveScale = trace == 0 ? 1.f + spread * .6f : 1.f;
+                            const auto widthGain = trace == 0
+                                                       ? 1.f + spread * bandSpreadWidth[i]
+                                                       : 1.f;
                             for (int step = 0; step <= steps; ++step) {
                                 const auto t = static_cast<float>(step) / static_cast<float>(steps);
                                 const auto inputDb = yMin + (0.f - yMin) * t;
                                 const auto output = std::abs((*bandShaper)(
-                                        juce::Decibels::decibelsToGain(inputDb) * channelGain)) / channelGain;
+                                        juce::Decibels::decibelsToGain(inputDb) * driveScale)) /
+                                                    driveScale * widthGain;
                                 const auto outputDb = output > 0.f
                                                       ? juce::Decibels::gainToDecibels(output)
                                                       : yMin;
@@ -231,7 +241,7 @@ namespace zlinterface {
                             if (split) {
                                 g.setFont(juce::Font(fontSize * .7f));
                                 g.setColour(uiBase.getTextInactiveColor());
-                                g.drawText(trace == 0 ? "L" : "R",
+                                g.drawText(trace == 0 ? "S" : "M",
                                            juce::Rectangle<float>(juce::jmin(curveEnds[trace].x,
                                                                              plotBound.getRight() - fontSize),
                                                                   curveEnds[trace].y - fontSize * .95f,
@@ -612,7 +622,7 @@ namespace zlinterface {
         }
     }
 
-    float BandPlotComponent::getBandCurveY(size_t band, float x, float channelGain) const {
+    float BandPlotComponent::getBandCurveY(size_t band, float x, float driveScale, float widthGain) const {
         const auto [fLow, fHigh] = getBandRange(band);
         const auto xLow = getX(fLow);
         const auto xHigh = getX(fHigh);
@@ -625,8 +635,9 @@ namespace zlinterface {
         }
         const auto t = juce::jlimit(0.f, 1.f, (x - xLow) / (xHigh - xLow));
         const auto inputDb = yMin + (0.f - yMin) * t;
-        const auto gain = juce::jmax(.05f, channelGain);
-        const auto output = std::abs((*bandShaper)(juce::Decibels::decibelsToGain(inputDb) * gain)) / gain;
+        const auto gain = juce::jmax(.05f, driveScale);
+        const auto output = std::abs((*bandShaper)(juce::Decibels::decibelsToGain(inputDb) * gain)) /
+                            gain * widthGain;
         return getY(output > 0.f ? juce::Decibels::gainToDecibels(output) + bandGainValues[band] : yMin);
     }
 
@@ -639,8 +650,10 @@ namespace zlinterface {
         }
         const auto tolerance = juce::jmax(uiBase.getFontSize() * .5f, 6.f);
         const auto spread = juce::jlimit(0.f, 1.f, spreadValue * .01f);
-        for (const auto channelGain: {1.f - spread * .75f, 1.f + spread * .75f}) {
-            if (std::abs(getBandCurveY(band, position.x, channelGain) - position.y) < tolerance) {
+        const auto side = std::array<float, 2>{1.f + spread * .6f, 1.f + spread * bandSpreadWidth[band]};
+        const auto mid = std::array<float, 2>{1.f, 1.f};
+        for (const auto &curve: {side, mid}) {
+            if (std::abs(getBandCurveY(band, position.x, curve[0], curve[1]) - position.y) < tolerance) {
                 return true;
             }
         }

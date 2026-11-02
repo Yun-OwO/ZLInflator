@@ -118,7 +118,7 @@ namespace zlinterface {
         juce::Rectangle<float> getBandLineBound(size_t band) const;
 
         /** the y of the transfer curve of a band at this x, one per channel */
-        float getBandCurveY(size_t band, float x, float channelGain) const;
+        float getBandCurveY(size_t band, float x, float driveScale, float widthGain) const;
 
         /** true while the point sits on one of the curves of that band */
         bool isOnBandCurve(size_t band, juce::Point<float> position) const;
