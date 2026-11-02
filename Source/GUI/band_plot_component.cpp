@@ -14,7 +14,7 @@ You should have received a copy of the GNU General Public License along with ZLI
 #include "band_plot_component.h"
 
 namespace zlinterface {
-    BandPlotComponent::BandPlotComponent(std::function<const shaper::Shaper<float> *(size_t)> shaperGetter,
+    BandPlotComponent::BandPlotComponent(std::function<const shaper::BandShaper<float> *(size_t)> shaperGetter,
                                          SpectrumSource<float> *spectrumSource,
                                          juce::AudioProcessorValueTreeState &parameters,
                                          UIBase &base) :
@@ -46,6 +46,7 @@ namespace zlinterface {
             bandGainValues[i] = getBandGainValue(i);
             bandGains[i] = getBandGain(i);
         }
+        spreadValue = getSpreadValue();
     }
 
     void BandPlotComponent::paint(juce::Graphics &g) {
@@ -165,34 +166,79 @@ namespace zlinterface {
             // of the spectrum the band covers: the horizontal axis sweeps the
             // input level from the bottom to the top of the plot
             if (getShaper != nullptr) {
-                if (const auto *bandShaper = getShaper(i)) {
+                if (const auto *shaperBundle = getShaper(i)) {
                     const auto xLow = getX(fLow);
                     const auto xHigh = getX(fHigh);
-                    if (xHigh - xLow > 2.f) {
+                    const auto *bandShaper = shaperBundle->getActiveShaper();
+                    if (bandShaper != nullptr && xHigh - xLow > 2.f) {
+                        // the spread pulls the curve of the left and the right
+                        // channel apart: at zero they lie on top of each other
+                        const auto spread = juce::jlimit(0.f, 1.f, spreadValue * .01f);
+                        const auto split = spread > .002f;
                         constexpr int steps = 72;
-                        juce::Path curve;
-                        for (int step = 0; step <= steps; ++step) {
-                            const auto t = static_cast<float>(step) / static_cast<float>(steps);
-                            const auto inputDb = yMin + (0.f - yMin) * t;
-                            const auto output = std::abs(
-                                    (*bandShaper)(juce::Decibels::decibelsToGain(inputDb)));
-                            const auto outputDb = output > 0.f
-                                                  ? juce::Decibels::gainToDecibels(output)
-                                                  : yMin;
-                            const auto px = xLow + (xHigh - xLow) * t;
-                            const auto py = getY(outputDb + bandGainValues[i]);
-                            if (step == 0) {
-                                curve.startNewSubPath(px, py);
-                            } else {
-                                curve.lineTo(px, py);
+                        juce::Path curves[2];
+                        juce::Point<float> curveEnds[2];
+                        std::array<juce::Point<float>, steps + 1> points[2];
+                        const auto traceCount = split ? 2 : 1;
+                        for (int trace = 0; trace < traceCount; ++trace) {
+                            const auto channelGain = juce::jmax(.05f, trace == 0
+                                                                             ? 1.f - spread * .75f
+                                                                             : 1.f + spread * .75f);
+                            for (int step = 0; step <= steps; ++step) {
+                                const auto t = static_cast<float>(step) / static_cast<float>(steps);
+                                const auto inputDb = yMin + (0.f - yMin) * t;
+                                const auto output = std::abs((*bandShaper)(
+                                        juce::Decibels::decibelsToGain(inputDb) * channelGain)) / channelGain;
+                                const auto outputDb = output > 0.f
+                                                      ? juce::Decibels::gainToDecibels(output)
+                                                      : yMin;
+                                const auto point = juce::Point<float>(xLow + (xHigh - xLow) * t,
+                                                                      getY(outputDb + bandGainValues[i]));
+                                points[trace][static_cast<size_t>(step)] = point;
+                                curveEnds[trace] = point;
+                                if (step == 0) {
+                                    curves[trace].startNewSubPath(point);
+                                } else {
+                                    curves[trace].lineTo(point);
+                                }
                             }
                         }
-                        g.setColour(uiBase.getLineColor1().withAlpha(isActive ? .55f : .28f));
-                        g.strokePath(curve, juce::PathStrokeType(4.5f, juce::PathStrokeType::curved,
-                                                                 juce::PathStrokeType::rounded));
-                        g.setColour(uiBase.getLineColor1().withAlpha(isActive ? .95f : .6f));
-                        g.strokePath(curve, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved,
-                                                                 juce::PathStrokeType::rounded));
+                        if (split) {
+                            // the area between the two channels is the room the
+                            // curves open up, so it reads at a glance
+                            juce::Path opening;
+                            opening.startNewSubPath(points[0][0]);
+                            for (int step = 1; step <= steps; ++step) {
+                                opening.lineTo(points[0][static_cast<size_t>(step)]);
+                            }
+                            for (int step = steps; step >= 0; --step) {
+                                opening.lineTo(points[1][static_cast<size_t>(step)]);
+                            }
+                            opening.closeSubPath();
+                            g.setColour(uiBase.getLineColor1().withAlpha(.16f));
+                            g.fillPath(opening);
+                        }
+                        for (int trace = 0; trace < traceCount; ++trace) {
+                            const auto shade = trace == 0 ? 1.f : .72f;
+                            g.setColour(uiBase.getLineColor1().withAlpha((isActive ? .55f : .28f) * shade));
+                            g.strokePath(curves[trace],
+                                         juce::PathStrokeType(4.5f, juce::PathStrokeType::curved,
+                                                              juce::PathStrokeType::rounded));
+                            g.setColour(uiBase.getLineColor1().withAlpha((isActive ? .95f : .6f) * shade));
+                            g.strokePath(curves[trace],
+                                         juce::PathStrokeType(1.6f, juce::PathStrokeType::curved,
+                                                              juce::PathStrokeType::rounded));
+                            if (split) {
+                                g.setFont(juce::Font(fontSize * .7f));
+                                g.setColour(uiBase.getTextInactiveColor());
+                                g.drawText(trace == 0 ? "L" : "R",
+                                           juce::Rectangle<float>(juce::jmin(curveEnds[trace].x,
+                                                                             plotBound.getRight() - fontSize),
+                                                                  curveEnds[trace].y - fontSize * .95f,
+                                                                  fontSize, fontSize).toNearestInt(),
+                                           juce::Justification::centred, false);
+                            }
+                        }
                     }
                 }
             }
@@ -208,6 +254,15 @@ namespace zlinterface {
             g.drawText(text,
                        juce::Rectangle<float>(midX, y - fontSize * 1.45f, rectWidth, fontSize * 1.2f).toNearestInt(),
                        juce::Justification::centred, false);
+        }
+
+        // while the curves are apart, say how far they have opened
+        if (spreadValue > .5f) {
+            g.setFont(juce::Font(fontSize * .85f));
+            g.setColour(uiBase.getTextInactiveColor());
+            g.drawText("Spread " + juce::String(juce::roundToInt(spreadValue)) + " %",
+                       plotBound.withHeight(fontSize * 1.5f).toNearestInt(),
+                       juce::Justification::centredLeft, false);
         }
     }
 
@@ -258,9 +313,13 @@ namespace zlinterface {
                 activeHandle = static_cast<int>(i);
             }
         }
+        hoveringCurve = false;
         if (activeHandle < 0) {
-            for (size_t i = 0; i < BandNUM; ++i) {
-                if (getBandLineBound(i).contains(event.position)) {
+            for (size_t i = 0; i < BandNUM && activeBand < 0; ++i) {
+                if (isOnBandCurve(i, event.position)) {
+                    activeBand = static_cast<int>(i);
+                    hoveringCurve = true;
+                } else if (getBandLineBound(i).contains(event.position)) {
                     activeBand = static_cast<int>(i);
                 }
             }
@@ -284,6 +343,17 @@ namespace zlinterface {
             }
         }
         for (size_t i = 0; i < BandNUM; ++i) {
+            if (isOnBandCurve(i, event.position)) {
+                activeBand = static_cast<int>(i);
+                hoveringCurve = true;
+                isDraggingSpread = true;
+                dragStart = event.position;
+                dragStartSpread = getSpreadValue();
+                repaint();
+                return;
+            }
+        }
+        for (size_t i = 0; i < BandNUM; ++i) {
             if (getBandLineBound(i).contains(event.position)) {
                 activeBand = static_cast<int>(i);
                 isDraggingGain = true;
@@ -296,6 +366,17 @@ namespace zlinterface {
 
     void BandPlotComponent::mouseDrag(const juce::MouseEvent &event) {
         lastMousePos = event.position;
+        if (isDraggingSpread) {
+            // one plot height of travel opens the two channels fully
+            const auto plotBound = getPlotBound();
+            if (plotBound.getHeight() <= 0) {
+                return;
+            }
+            setSpreadValue(dragStartSpread +
+                           (dragStart.y - event.position.y) / plotBound.getHeight() * 100.f);
+            repaint();
+            return;
+        }
         if (isDraggingGain && activeBand >= 0) {
             // one pixel of travel is one pixel on the dB scale of the plot
             const auto plotBound = getPlotBound();
@@ -332,11 +413,39 @@ namespace zlinterface {
     void BandPlotComponent::mouseUp(const juce::MouseEvent &) {
         isDragging = false;
         isDraggingGain = false;
+        isDraggingSpread = false;
         repaint();
     }
 
+    void BandPlotComponent::mouseWheelMove(const juce::MouseEvent &event,
+                                           const juce::MouseWheelDetails &wheel) {
+        const auto direction = wheel.deltaY >= 0.f ? 1.f : -1.f;
+        for (size_t i = 0; i < splitValues.size(); ++i) {
+            if (getHandleBound(getX(splitValues[i])).expanded(2.f).contains(event.position)) {
+                setSplitValue(i == 0 ? zldsp::lowSplit::ID : zldsp::highSplit::ID,
+                              splitValues[i] * (direction > 0.f ? 1.02f : 1.f / 1.02f));
+                repaint();
+                return;
+            }
+        }
+        for (size_t i = 0; i < BandNUM; ++i) {
+            if (isOnBandCurve(i, event.position)) {
+                setSpreadValue(getSpreadValue() + direction * 2.f);
+                repaint();
+                return;
+            }
+        }
+        for (size_t i = 0; i < BandNUM; ++i) {
+            if (getBandLineBound(i).contains(event.position)) {
+                setBandGainValue(i, getBandGainValue(i) + direction * .5f);
+                repaint();
+                return;
+            }
+        }
+    }
+
     void BandPlotComponent::mouseExit(const juce::MouseEvent &) {
-        if (!isDragging && !isDraggingGain && (activeHandle >= 0 || activeBand >= 0)) {
+        if (!isDragging && !isDraggingGain && !isDraggingSpread && (activeHandle >= 0 || activeBand >= 0)) {
             activeHandle = -1;
             activeBand = -1;
             repaint();
@@ -400,13 +509,6 @@ namespace zlinterface {
             auto &current = scopeData[i];
             current = juce::jmax(clamped, current - 1.5f);
         }
-#ifdef ZLPLOT_DEBUG
-        {
-            float mx = -1000.f;
-            for (auto v: scopeData) mx = juce::jmax(mx, v);
-            std::fprintf(stderr, "updateSpectrum called, scope peak = %.2f\n", mx);
-        }
-#endif
     }
 
     float BandPlotComponent::getX(float freq) const {
@@ -494,6 +596,55 @@ namespace zlinterface {
         if (auto *parameter = apvts.getParameter(getBandGainID(band))) {
             parameter->setValueNotifyingHost(parameter->convertTo0to1(dB));
         }
+    }
+
+    float BandPlotComponent::getSpreadValue() const {
+        if (auto *value = apvts.getRawParameterValue(zldsp::stereoSpread::ID)) {
+            return value->load();
+        }
+        return 0.f;
+    }
+
+    void BandPlotComponent::setSpreadValue(float percent) {
+        if (auto *parameter = apvts.getParameter(zldsp::stereoSpread::ID)) {
+            parameter->setValueNotifyingHost(
+                    parameter->convertTo0to1(juce::jlimit(0.f, 100.f, percent)));
+        }
+    }
+
+    float BandPlotComponent::getBandCurveY(size_t band, float x, float channelGain) const {
+        const auto [fLow, fHigh] = getBandRange(band);
+        const auto xLow = getX(fLow);
+        const auto xHigh = getX(fHigh);
+        if (xHigh - xLow <= 2.f || x < xLow || x > xHigh || getShaper == nullptr) {
+            return yMin;
+        }
+        const auto *bandShaper = getShaper(band)->getActiveShaper();
+        if (bandShaper == nullptr) {
+            return yMin;
+        }
+        const auto t = juce::jlimit(0.f, 1.f, (x - xLow) / (xHigh - xLow));
+        const auto inputDb = yMin + (0.f - yMin) * t;
+        const auto gain = juce::jmax(.05f, channelGain);
+        const auto output = std::abs((*bandShaper)(juce::Decibels::decibelsToGain(inputDb) * gain)) / gain;
+        return getY(output > 0.f ? juce::Decibels::gainToDecibels(output) + bandGainValues[band] : yMin);
+    }
+
+    bool BandPlotComponent::isOnBandCurve(size_t band, juce::Point<float> position) const {
+        const auto [fLow, fHigh] = getBandRange(band);
+        const auto xLow = getX(fLow);
+        const auto xHigh = getX(fHigh);
+        if (xHigh - xLow <= 2.f || position.x < xLow || position.x > xHigh) {
+            return false;
+        }
+        const auto tolerance = juce::jmax(uiBase.getFontSize() * .5f, 6.f);
+        const auto spread = juce::jlimit(0.f, 1.f, spreadValue * .01f);
+        for (const auto channelGain: {1.f - spread * .75f, 1.f + spread * .75f}) {
+            if (std::abs(getBandCurveY(band, position.x, channelGain) - position.y) < tolerance) {
+                return true;
+            }
+        }
+        return false;
     }
 
     juce::Rectangle<float> BandPlotComponent::getBandLineBound(size_t band) const {

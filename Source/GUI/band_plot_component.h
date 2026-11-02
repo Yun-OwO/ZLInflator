@@ -35,7 +35,7 @@ namespace zlinterface {
                               private juce::AsyncUpdater,
                               private juce::Timer {
     public:
-        BandPlotComponent(std::function<const shaper::Shaper<float> *(size_t)> shaperGetter,
+        BandPlotComponent(std::function<const shaper::BandShaper<float> *(size_t)> shaperGetter,
                           SpectrumSource<float> *spectrumSource,
                           juce::AudioProcessorValueTreeState &parameters,
                           UIBase &base);
@@ -51,6 +51,8 @@ namespace zlinterface {
         void mouseDrag(const juce::MouseEvent &) override;
 
         void mouseUp(const juce::MouseEvent &) override;
+
+        void mouseWheelMove(const juce::MouseEvent &event, const juce::MouseWheelDetails &wheel) override;
 
         void mouseExit(const juce::MouseEvent &) override;
 
@@ -91,6 +93,11 @@ namespace zlinterface {
 
         void setBandGainValue(size_t band, float dB);
 
+        /** 0..100, how far the two channel curves of a band sit apart */
+        float getSpreadValue() const;
+
+        void setSpreadValue(float percent);
+
         std::pair<float, float> getBandRange(size_t band) const;
 
         /** the gain the transfer curve of a band adds to a -12 dB input */
@@ -110,11 +117,17 @@ namespace zlinterface {
         /** The clickable strip around the level line of a band. */
         juce::Rectangle<float> getBandLineBound(size_t band) const;
 
+        /** the y of the transfer curve of a band at this x, one per channel */
+        float getBandCurveY(size_t band, float x, float channelGain) const;
+
+        /** true while the point sits on one of the curves of that band */
+        bool isOnBandCurve(size_t band, juce::Point<float> position) const;
+
         static constexpr size_t fftOrder = 11;
         static constexpr size_t fftSize = static_cast<size_t>(1) << fftOrder;
         static constexpr size_t minHandlesDistance = 24;
 
-        std::function<const shaper::Shaper<float> *(size_t)> getShaper;
+        std::function<const shaper::BandShaper<float> *(size_t)> getShaper;
         SpectrumSource<float> *spectrum;
         juce::AudioProcessorValueTreeState &apvts;
         UIBase &uiBase;
@@ -133,12 +146,17 @@ namespace zlinterface {
         int activeBand = -1;
         bool isDragging = false;
         bool isDraggingGain = false;
+        bool isDraggingSpread = false;
+        float spreadValue = 0.f;
+        float dragStartSpread = 0.f;
+        bool hoveringCurve = false;
         juce::Point<float> dragStart;
 
         juce::Point<float> lastMousePos;
 
         constexpr const static std::array IDs{zldsp::lowSplit::ID, zldsp::highSplit::ID, zldsp::effectIn::ID,
-                                             zldsp::bandGainLow::ID, zldsp::bandGainMid::ID, zldsp::bandGainHigh::ID};
+                                             zldsp::bandGainLow::ID, zldsp::bandGainMid::ID, zldsp::bandGainHigh::ID,
+                                             zldsp::stereoSpread::ID};
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BandPlotComponent)
     };

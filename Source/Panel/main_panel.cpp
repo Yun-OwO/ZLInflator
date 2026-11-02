@@ -99,11 +99,8 @@ MainPanel::MainPanel(ZLInflatorAudioProcessor &p) :
         uiBase(),
         logoPanel(p, uiBase),
         bandPanel(p.parameters, uiBase),
-        bandPlotComponent([&p](size_t band) -> const shaper::Shaper<float> * {
-            if (auto *bandShaper = p.getBandShaper(band)) {
-                return bandShaper->getActiveShaper();
-            }
-            return nullptr;
+        bandPlotComponent([&p](size_t band) -> const shaper::BandShaper<float> * {
+            return p.getBandShaper(band);
         }, p.getSpectrumSource(), p.parameters, uiBase),
         meterPanel(p, uiBase),
         footerPanel(p.parameters, uiBase) {

@@ -308,6 +308,15 @@ namespace zldsp {
         auto static constexpr defaultV = 0.0f;
     };
 
+    /** how far the left and the right channel of a band drift apart, in percent */
+    class stereoSpread : public FloatParameters<stereoSpread> {
+    public:
+        auto static constexpr ID = "stereo_spread";
+        auto static constexpr name = "Stereo Spread (%)";
+        inline auto static const range = juce::NormalisableRange<float>(0.f, 100.f, 0.1f, 1.f, true);
+        auto static constexpr defaultV = 0.0f;
+    };
+
     inline juce::AudioProcessorValueTreeState::ParameterLayout getParameterLayout() {
         juce::AudioProcessorValueTreeState::ParameterLayout layout;
         // the parameters of the two shaper mixer are kept at their former
@@ -323,7 +332,7 @@ namespace zldsp {
                    styleMid::get(), curveMid::get(),
                    styleHigh::get(), curveHigh::get(),
                    bandGainLow::get(), bandGainMid::get(), bandGainHigh::get(),
-                   midSide::get(), drive::get());
+                   midSide::get(), drive::get(), stereoSpread::get());
         return layout;
     }
 }

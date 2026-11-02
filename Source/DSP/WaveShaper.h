@@ -141,6 +141,12 @@ public:
         driveGain.store(gain > static_cast<FloatType>(0) ? gain : static_cast<FloatType>(1));
     }
 
+    /** 0 keeps both channels on the same curve, 1 pulls them the furthest apart */
+    void setStereoSpread(FloatType amount) {
+        stereoSpreadAmount.store(juce::jlimit(static_cast<FloatType>(0), static_cast<FloatType>(1),
+                                              amount));
+    }
+
     void setEffectFlag(bool effectFlag) {
         effect.store(effectFlag);
     }
@@ -273,6 +279,7 @@ private:
         const auto dry = m_dry.load();
         const auto drive = driveGain.load();
         const auto midSide = midSideAmount.load();
+        const auto spread = stereoSpreadAmount.load();
         const auto numSamples = block.getNumSamples();
         const auto numChannels = block.getNumChannels();
         if (numChannels > 1 && std::abs(midSide) > static_cast<FloatType>(1e-4)) {
@@ -289,8 +296,10 @@ private:
                                           static_cast<FloatType>(1) - wetMid, drive);
                 const auto sideOut = shape(*bandShaper, sideSignal, wetSide,
                                            static_cast<FloatType>(1) - wetSide, drive);
-                left[s] = midOut + sideOut;
-                right[s] = midOut - sideOut;
+                // the spread opens the side of the image, the mid stays put
+                const auto sideGain = static_cast<FloatType>(1) + spread * static_cast<FloatType>(0.75);
+                left[s] = midOut + sideOut * sideGain;
+                right[s] = midOut - sideOut * sideGain;
             }
             for (size_t ch = 2; ch < numChannels; ++ch) {
                 auto data = block.getChannelPointer(ch);
@@ -302,8 +311,16 @@ private:
         }
         for (size_t ch = 0; ch < numChannels; ++ch) {
             auto data = block.getChannelPointer(ch);
+            // the spread feeds one channel a little more of the shaper and the
+            // other a little less; dividing the result back keeps the small
+            // signal untouched and leaves only the amount of saturation apart
+            auto channelGain = static_cast<FloatType>(1);
+            if (numChannels > 1 && spread > static_cast<FloatType>(1e-4)) {
+                channelGain = ch == 0 ? static_cast<FloatType>(1) - spread * static_cast<FloatType>(0.75)
+                                      : static_cast<FloatType>(1) + spread * static_cast<FloatType>(0.75);
+            }
             for (size_t s = 0; s < numSamples; ++s) {
-                data[s] = shape(*bandShaper, data[s], wet, dry, drive);
+                data[s] = shape(*bandShaper, data[s] * channelGain, wet, dry, drive) / channelGain;
             }
         }
     }
@@ -328,6 +345,7 @@ private:
     std::atomic<FloatType> m_dry = static_cast<FloatType>(1) -
                                    static_cast<FloatType>(zldsp::wet::formatV(zldsp::wet::defaultV));
     std::atomic<FloatType> midSideAmount = static_cast<FloatType>(0);
+    std::atomic<FloatType> stereoSpreadAmount = static_cast<FloatType>(0);
     std::atomic<FloatType> driveGain = static_cast<FloatType>(1);
     std::array<std::unique_ptr<juce::dsp::Oversampling<FloatType>>, numSamplers>
             overSamplers{};
@@ -345,13 +363,13 @@ public:
         apvts = &parameters;
     }
 
-    static constexpr std::array<const char *, 17> getIDs() {
+    static constexpr std::array<const char *, 18> getIDs() {
         return {zldsp::effectIn::ID, zldsp::wet::ID, zldsp::autoGain::ID,
                 zldsp::lowSplit::ID, zldsp::highSplit::ID, zldsp::overSample::ID,
                 zldsp::styleLow::ID, zldsp::curveLow::ID,
                 zldsp::styleMid::ID, zldsp::curveMid::ID,
                 zldsp::styleHigh::ID, zldsp::curveHigh::ID, zldsp::bandGainLow::ID, zldsp::bandGainMid::ID, zldsp::bandGainHigh::ID,
-                zldsp::midSide::ID, zldsp::drive::ID};
+                zldsp::midSide::ID, zldsp::drive::ID, zldsp::stereoSpread::ID};
     }
 
     void addListeners() {
@@ -410,6 +428,8 @@ public:
             waveShaper->setMidSide(static_cast<FloatType>(newValue) / static_cast<FloatType>(100));
         } else if (parameterID == zldsp::drive::ID) {
             waveShaper->setDrive(static_cast<FloatType>(newValue));
+        } else if (parameterID == zldsp::stereoSpread::ID) {
+            waveShaper->setStereoSpread(static_cast<FloatType>(newValue) / static_cast<FloatType>(100));
         }
     }
 
