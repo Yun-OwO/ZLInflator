@@ -196,11 +196,13 @@ void MainPanel::resized() {
     const auto plotBound = juce::Rectangle<float>(inner.getX(), figureTop,
                                                   inner.getWidth() - plotGutter, plotHeight)
             .reduced(plotMargin, 0.f);
-    // the switch pills end on the right edge of the meter cards, so the whole
-    // right hand side reads as one column instead of leaving a gap
-    const auto meterCardInset = juce::jmax(std::round(fontSize * .5f * .25f * 1.5f), 1.f)
-                                + 1.42f * fontSize * .5f;
-    const auto switchLeft = meterColumn.getRight() - meterCardInset - switchCellWidth;
+    // the switch pills end on the right edge of the spectrum card, the very
+    // line the figure closes on, and the drive knob takes the corner beyond it
+    const auto cardInset = [] (float fontSize) {
+        const auto cornerSize = fontSize * .5f;
+        return juce::jmax(std::round(cornerSize * .5f * 1.5f), 1.f) + 1.42f * cornerSize;
+    } (fontSize);
+    const auto switchLeft = plotBound.getRight() - cardInset - switchCellWidth;
     auto switchColumn = juce::Rectangle<float>(switchLeft, figureTop - switchHeight * 2.f - cellGap,
                                                switchCellWidth, switchHeight * 2.f + cellGap);
     auto overSampleCell = switchColumn.removeFromTop(switchHeight);
