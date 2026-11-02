@@ -173,8 +173,10 @@ void MainPanel::resized() {
         const auto buttonWidth = juce::jmin(bypassCell.getWidth(), fontSize * 3.6f);
         effectButton->setBounds(bypassCell.withSizeKeepingCentre(buttonWidth, switchHeight).toNearestInt());
     }
-    // the spectrum keeps the width of the figure, with a gutter before the
-    // meter column so the two cards never read as one
+    // the cards are drawn one shadow inset inside their own bounds and the soft
+    // shadow lives in that margin: the bounds stay on the figure rectangle so
+    // nothing bleeds over the header or the band strip, and the sculpted edge
+    // the cards are known for comes back
     const auto plotMargin = fontSize * .2f;
     const auto plotGutter = fontSize * .5f;
     meterPanel.setBounds(juce::Rectangle<float>(meterColumn.getX(), figureTop,
