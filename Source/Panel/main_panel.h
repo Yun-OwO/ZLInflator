@@ -16,6 +16,7 @@ You should have received a copy of the GNU General Public License along with ZLI
 
 #include "../GUI/interface_definitions.h"
 #include "../GUI/button_component.h"
+#include "../GUI/rotary_slider_component.h"
 #include "band_panel.h"
 #include "footer_panel.h"
 #include "logo_panel.h"
@@ -40,10 +41,6 @@ public:
 
     void mouseWheelMove(const juce::MouseEvent &, const juce::MouseWheelDetails &) override;
 
-    /** A plain click flips between these two choices instead of walking the
-        whole list, the wheel still walks them all. */
-    void setTogglePair(int offChoice, int onChoice);
-
     /** The pill reads this while the first choice is picked. */
     void setOffCaption(const juce::String &text);
 
@@ -61,9 +58,6 @@ private:
     const juce::String parameterID;
     int numChoices = 0;
     juce::String offCaption;
-    int toggleOff = 0;
-    int toggleOn = 1;
-    bool hasTogglePair = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ChoiceButton)
 };
@@ -86,6 +80,8 @@ private:
     std::unique_ptr<zlinterface::ButtonComponent> effectButton;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> effectAttachment;
     std::unique_ptr<zlinterface::ButtonComponent> compensationButton;
+    std::unique_ptr<zlinterface::RotarySliderComponent> driveKnob;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> driveAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> compensationAttachment;
     std::unique_ptr<ChoiceButton> overSampleButton;
 

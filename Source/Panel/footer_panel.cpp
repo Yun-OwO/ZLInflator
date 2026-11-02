@@ -19,7 +19,6 @@ namespace zlpanel {
             apvts(audioParameters), uiBase(&base) {
         inputGain = std::make_unique<zlinterface::RotarySliderComponent>("In", base);
         outputGain = std::make_unique<zlinterface::RotarySliderComponent>("Out", base);
-        drive = std::make_unique<zlinterface::RotarySliderComponent>("Drive", base);
         wet = std::make_unique<zlinterface::RotarySliderComponent>("Wet", base);
         midSide = std::make_unique<zlinterface::RotarySliderComponent>("M / S", base);
         for (auto *knob : knobList) {
@@ -31,7 +30,6 @@ namespace zlpanel {
         };
         addAttachment(zldsp::inputGain::ID, inputGain.get());
         addAttachment(zldsp::outputGain::ID, outputGain.get());
-        addAttachment(zldsp::drive::ID, drive.get());
         addAttachment(zldsp::wet::ID, wet.get());
         addAttachment(zldsp::midSide::ID, midSide.get());
     }

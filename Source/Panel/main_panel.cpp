@@ -32,12 +32,6 @@ ChoiceButton::ChoiceButton(ZLInflatorAudioProcessor &p, const juce::String &labe
     // the toggle child swallows the clicks, so step from its own callback: it
     // fires on the release inside the cell and leaves the modifier keys at hand
     getButton().onClick = [this] {
-        if (hasTogglePair) {
-            // a packed switch: a click flips the two states, the wheel walks
-            // through every choice there is
-            goTo(getChoiceIndex() == toggleOff ? toggleOn : toggleOff);
-            return;
-        }
         step(juce::ModifierKeys::currentModifiers.isRightButtonDown() ? -1 : 1);
     };
     refresh();
@@ -74,12 +68,6 @@ void ChoiceButton::goTo(int index) {
     const auto choice = juce::jlimit(0, numChoices - 1, index);
     parameter->setValueNotifyingHost(parameter->convertTo0to1(static_cast<float>(choice)));
     refresh();
-}
-
-void ChoiceButton::setTogglePair(int offChoice, int onChoice) {
-    toggleOff = offChoice;
-    toggleOn = onChoice;
-    hasTogglePair = true;
 }
 
 void ChoiceButton::step(int direction) {
@@ -141,10 +129,14 @@ MainPanel::MainPanel(ZLInflatorAudioProcessor &p) :
     addAndMakeVisible(*compensationButton);
     overSampleButton = std::make_unique<ChoiceButton>(p, "", zldsp::overSample::ID, uiBase);
     overSampleButton->setTitleVisible(false);
-    // a click is an on/off switch: off is the plain path, on is 4x oversampling
-    overSampleButton->setTogglePair(0, 2);
     overSampleButton->setOffCaption("HQ");
     addAndMakeVisible(*overSampleButton);
+    // the drive knob fills the free corner under the meters, away from the row
+    // of global knobs it used to crowd
+    driveKnob = std::make_unique<zlinterface::RotarySliderComponent>("Drive", uiBase);
+    driveAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+            p.parameters, zldsp::drive::ID, driveKnob->getSlider());
+    addAndMakeVisible(*driveKnob);
     addAndMakeVisible(logoPanel);
     addAndMakeVisible(bandPanel);
     addAndMakeVisible(bandPlotComponent);
@@ -184,7 +176,7 @@ void MainPanel::resized() {
     // one switch cell is one row of the very same grid the band strip uses
     const auto switchHeight = juce::jmin(fontSize * zlinterface::ControlHeight,
                                          (inner.getHeight() - stripHeight) * .18f);
-    const auto switchCellWidth = juce::jmin(inner.getWidth() * 0.15f, fontSize * 4.4f);
+    const auto switchCellWidth = juce::jmin(inner.getWidth() * 0.15f, fontSize * 4.6f);
     // the header row has to be tall enough to hold the two stacked switches
     const auto headerHeight = juce::jmax(juce::jmin(fontSize * zlinterface::KnobRowHeight,
                                                     (inner.getHeight() - stripHeight) * .28f),
@@ -195,38 +187,39 @@ void MainPanel::resized() {
     const auto figureTop = inner.getY() + headerHeight + fontSize * .3f;
     const auto plotHeight = juce::jmax(0.f, figureBottom - figureTop);
 
-    const auto meterWidth = juce::jmin(inner.getWidth() * 0.13f, fontSize * 4.4f);
+    const auto meterWidth = juce::jmin(inner.getWidth() * 0.14f, fontSize * 4.8f);
     auto meterColumn = inner.removeFromRight(meterWidth);
-    // the figure is inset one shadow margin inside its bounds, that is where its
-    // card edge really falls: the two switches stack over the right end of that
-    // edge, and their cells end on the very line the cards start on
+    // the two switches and the drive knob sit right of the figure, sharing the
+    // right edge of the meter column, so nothing is left dangling in the gap
     const auto plotMargin = fontSize * .2f;
     const auto plotGutter = fontSize * .5f;
-    const auto plotCardInset = [] (float fontSize) {
-        const auto cornerSize = fontSize * .5f;
-        return juce::jmax(std::round(cornerSize * .5f * 1.5f), 1.f) + 1.42f * cornerSize;
-    } (fontSize);
     const auto plotBound = juce::Rectangle<float>(inner.getX(), figureTop,
                                                   inner.getWidth() - plotGutter, plotHeight)
             .reduced(plotMargin, 0.f);
-    const auto plotCardRight = plotBound.getRight() - plotCardInset;
-    const auto switchLeft = plotCardRight - switchCellWidth;
+    // the switch pills end on the right edge of the meter cards, so the whole
+    // right hand side reads as one column instead of leaving a gap
+    const auto meterCardInset = juce::jmax(std::round(fontSize * .5f * .25f * 1.5f), 1.f)
+                                + 1.42f * fontSize * .5f;
+    const auto switchLeft = meterColumn.getRight() - meterCardInset - switchCellWidth;
     auto switchColumn = juce::Rectangle<float>(switchLeft, figureTop - switchHeight * 2.f - cellGap,
                                                switchCellWidth, switchHeight * 2.f + cellGap);
     auto overSampleCell = switchColumn.removeFromTop(switchHeight);
     switchColumn.removeFromTop(cellGap);
     auto gainCell = switchColumn.removeFromTop(switchHeight);
+    // the A/B switch keeps its place over the meters, centred on their column
     auto bypassCell = juce::Rectangle<float>(meterColumn.getX(), figureTop - switchHeight,
                                              meterColumn.getWidth(), switchHeight);
+    // the drive knob fills the empty corner under the meters, as big as the
+    // split knobs of the band strip
+    auto driveBound = juce::Rectangle<float>(switchLeft, figureBottom, switchCellWidth,
+                                             inner.getBottom() - figureBottom);
 
     overSampleButton->setBounds(overSampleCell.withSizeKeepingCentre(
             switchCellWidth, switchHeight).toNearestInt());
     compensationButton->setBounds(gainCell.withSizeKeepingCentre(
             switchCellWidth, switchHeight).toNearestInt());
-    {
-        const auto buttonWidth = juce::jmin(bypassCell.getWidth(), fontSize * 3.6f);
-        effectButton->setBounds(bypassCell.withSizeKeepingCentre(buttonWidth, switchHeight).toNearestInt());
-    }
+    effectButton->setBounds(bypassCell.withSizeKeepingCentre(switchCellWidth, switchHeight).toNearestInt());
+    driveKnob->setBounds(driveBound.reduced(fontSize * .1f).toNearestInt());
     // the cards are drawn one shadow inset inside their own bounds and the soft
     // shadow lives in that margin: the bounds stay on the figure rectangle so
     // nothing bleeds over the header or the band strip, and the sculpted edge
@@ -236,20 +229,27 @@ void MainPanel::resized() {
     bandPlotComponent.setBounds(plotBound.toNearestInt());
 
     auto bandBound = inner.removeFromBottom(stripHeight);
+    // the strip stops short of the drive knob, so the two never share a pixel
+    bandBound.setRight(juce::jmax(bandBound.getX(), switchLeft - fontSize * .3f));
     bandPanel.setBounds(bandBound.reduced(fontSize * .2f, fontSize * .1f).toNearestInt());
 
     auto headerBound = inner.removeFromTop(headerHeight);
-    logoPanel.setBounds(headerBound.removeFromLeft(
-            juce::jmin(headerBound.getWidth() * 0.22f, fontSize * 9.f)).toNearestInt());
     {
         // the knobs keep a column each of the very same width the band strip
         // gives them, so the header reads as the first row of that grid; they
         // stay clear of the switch column on the right
-        headerBound.removeFromRight(switchCellWidth + fontSize * .5f);
-        const auto knobWidth = juce::jmin(headerBound.getWidth(),
+        auto knobRow = headerBound.withTrimmedRight(switchCellWidth + fontSize * .5f);
+        const auto knobWidth = juce::jmin(knobRow.getWidth(),
                                           zlpanel::FooterPanel::getPreferredWidth(fontSize));
-        footerPanel.setBounds(headerBound.withSizeKeepingCentre(
-                knobWidth, juce::jmin(headerBound.getHeight(), footerPanel.getPreferredHeight(fontSize))
+        // the brand keeps the corner and the knob row takes the middle, both on
+        // the one centre line the header shares with the figures below
+        const auto logoWidth = juce::jmin(fontSize * 9.f,
+                                          juce::jmax(0.f, knobRow.getWidth() - knobWidth - fontSize * .4f));
+        logoPanel.setBounds(knobRow.removeFromLeft(logoWidth).toNearestInt());
+        logoPanel.setJustification(juce::Justification::centred);
+        footerPanel.setBounds(knobRow.withSizeKeepingCentre(
+                juce::jmin(knobRow.getWidth(), knobWidth),
+                juce::jmin(knobRow.getHeight(), footerPanel.getPreferredHeight(fontSize))
         ).toNearestInt());
     }
 
