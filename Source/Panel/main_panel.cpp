@@ -154,9 +154,20 @@ void MainPanel::resized() {
 
     const auto meterWidth = juce::jmin(inner.getWidth() * 0.13f, fontSize * 4.4f);
     auto meterColumn = inner.removeFromRight(meterWidth);
-    // the two switches stack over the right end of the figure, their cells end
-    // on the very line the cards start on
-    const auto switchLeft = inner.getRight() - switchCellWidth;
+    // the figure is inset one shadow margin inside its bounds, that is where its
+    // card edge really falls: the two switches stack over the right end of that
+    // edge, and their cells end on the very line the cards start on
+    const auto plotMargin = fontSize * .2f;
+    const auto plotGutter = fontSize * .5f;
+    const auto plotCardInset = [] (float fontSize) {
+        const auto cornerSize = fontSize * .5f;
+        return juce::jmax(std::round(cornerSize * .5f * 1.5f), 1.f) + 1.42f * cornerSize;
+    } (fontSize);
+    const auto plotBound = juce::Rectangle<float>(inner.getX(), figureTop,
+                                                  inner.getWidth() - plotGutter, plotHeight)
+            .reduced(plotMargin, 0.f);
+    const auto plotCardRight = plotBound.getRight() - plotCardInset;
+    const auto switchLeft = plotCardRight - switchCellWidth;
     auto switchColumn = juce::Rectangle<float>(switchLeft, figureTop - switchHeight * 2.f - cellGap,
                                                switchCellWidth, switchHeight * 2.f + cellGap);
     auto overSampleCell = switchColumn.removeFromTop(switchHeight);
@@ -177,13 +188,9 @@ void MainPanel::resized() {
     // shadow lives in that margin: the bounds stay on the figure rectangle so
     // nothing bleeds over the header or the band strip, and the sculpted edge
     // the cards are known for comes back
-    const auto plotMargin = fontSize * .2f;
-    const auto plotGutter = fontSize * .5f;
     meterPanel.setBounds(juce::Rectangle<float>(meterColumn.getX(), figureTop,
                                                 meterColumn.getWidth(), plotHeight).toNearestInt());
-    bandPlotComponent.setBounds(juce::Rectangle<float>(inner.getX(), figureTop,
-                                                       inner.getWidth() - plotGutter, plotHeight)
-                                        .reduced(plotMargin, 0.f).toNearestInt());
+    bandPlotComponent.setBounds(plotBound.toNearestInt());
 
     auto bandBound = inner.removeFromBottom(stripHeight);
     bandPanel.setBounds(bandBound.reduced(fontSize * .2f, fontSize * .1f).toNearestInt());
@@ -196,7 +203,8 @@ void MainPanel::resized() {
         // gives them, so the header reads as the first row of that grid; they
         // stay clear of the switch column on the right
         headerBound.removeFromRight(switchCellWidth + fontSize * .5f);
-        const auto knobWidth = juce::jmin(headerBound.getWidth(), fontSize * 3.f * 4.6f);
+        const auto knobWidth = juce::jmin(headerBound.getWidth(),
+                                          zlpanel::FooterPanel::getPreferredWidth(fontSize));
         footerPanel.setBounds(headerBound.withSizeKeepingCentre(
                 knobWidth, juce::jmin(headerBound.getHeight(), footerPanel.getPreferredHeight(fontSize))
         ).toNearestInt());

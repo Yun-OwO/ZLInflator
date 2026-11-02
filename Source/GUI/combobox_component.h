@@ -26,10 +26,12 @@ namespace zlinterface {
             setLookAndFeel(&myLookAndFeel);
             comboBox.addItemList(choices, 1);
             comboBox.setLookAndFeel(&myLookAndFeel);
-            comboBox.setScrollWheelEnabled(false);
+            comboBox.setScrollWheelEnabled(true);
             addAndMakeVisible(comboBox);
             label.setText(labelText, juce::dontSendNotification);
             label.setLookAndFeel(&nameLookAndFeel);
+            // the caption never swallows the wheel, it belongs to the box
+            label.setInterceptsMouseClicks(false, false);
             addAndMakeVisible(label);
 
             uiBase = &base;
@@ -39,6 +41,18 @@ namespace zlinterface {
             setLookAndFeel(nullptr);
             comboBox.setLookAndFeel(nullptr);
             label.setLookAndFeel(nullptr);
+        }
+
+        void mouseWheelMove(const juce::MouseEvent &, const juce::MouseWheelDetails &wheel) override {
+            const auto count = comboBox.getNumItems();
+            if (wheel.deltaY == 0.0f || count <= 0) {
+                return;
+            }
+            const auto direction = (wheel.deltaY > 0.0f ? 1 : -1) * (wheel.isReversed ? -1 : 1);
+            const auto index = juce::jlimit(0, count - 1, comboBox.getSelectedItemIndex() + direction);
+            if (index != comboBox.getSelectedItemIndex()) {
+                comboBox.setSelectedItemIndex(index, juce::sendNotificationSync);
+            }
         }
 
         void resized() override {

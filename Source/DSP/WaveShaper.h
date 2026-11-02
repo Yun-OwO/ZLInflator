@@ -128,6 +128,19 @@ public:
                 std::pow(static_cast<FloatType>(10), dB * static_cast<FloatType>(0.05)));
     }
 
+    /** -1 saturates the mid only, +1 the side only, 0 saturates both channels
+        as they are */
+    void setMidSide(FloatType amount) {
+        midSideAmount.store(juce::jlimit(static_cast<FloatType>(-1), static_cast<FloatType>(1),
+                                         amount));
+    }
+
+    /** every band shaper is fed with the drive, the dry path is not */
+    void setDrive(FloatType dB) {
+        const auto gain = std::pow(static_cast<FloatType>(10), dB * static_cast<FloatType>(0.05));
+        driveGain.store(gain > static_cast<FloatType>(0) ? gain : static_cast<FloatType>(1));
+    }
+
     void setEffectFlag(bool effectFlag) {
         effect.store(effectFlag);
     }
@@ -173,7 +186,9 @@ public:
                 overSamplers[idxSampler]->processSamplesUp(context.getInputBlock());
         auto oversampled_context =
                 juce::dsp::ProcessContextReplacing<FloatType>(oversampled_block);
-        {
+        if (effect.load()) {
+            // with the effect off the up sampled block still holds the input,
+            // so it simply travels down untouched - it is not the low band
             auto sepBlock =
                     juce::dsp::AudioBlock<FloatType>(bufferSeparation)
                             .getSubBlock(0, static_cast<size_t> (
@@ -199,23 +214,14 @@ public:
             filters[1].processLow(contexts[1]);
             filters[1].processHigh(contexts[2]);
 
-            if (effect.load()) {
-                const auto wet = m_wet.load();
-                const auto dry = m_dry.load();
-                for (size_t i = 0; i < numBands; ++i) {
-                    const auto *bandShaper = &bandShapers[i];
-                    juce::dsp::AudioBlock<FloatType>::process(
-                            contexts[i].getInputBlock(), contexts[i].getOutputBlock(),
-                            [bandShaper, wet, dry](FloatType x) {
-                                return shape(*bandShaper, x, wet, dry);
-                            });
-                }
-                for (size_t i = 1; i < numBands; ++i) {
-                    // the band trim follows the shaper, so dragging the level
-                    // line of a band on the figure is what sets it
-                    blocks[i].multiplyBy(bandGains[i].load());
-                    blocks[0].add(blocks[i]);
-                }
+            for (size_t i = 0; i < numBands; ++i) {
+                processBand(blocks[i], &bandShapers[i]);
+            }
+            for (size_t i = 1; i < numBands; ++i) {
+                // the band trim follows the shaper, so dragging the level line
+                // of a band on the figure is what sets it
+                blocks[i].multiplyBy(bandGains[i].load());
+                blocks[0].add(blocks[i]);
             }
 
             oversampled_context.getOutputBlock().copyFrom(blocks[0]);
@@ -258,12 +264,59 @@ private:
                 static_cast<int>(overSamplers[idxSampler]->getLatencyInSamples()));
     }
 
+    /** saturates one band: at the centre of the mid/side control the two
+        channels are shaped as they are, off centre the band is taken apart and
+        only the mid or only the side is shaped, the other one passes dry */
+    void processBand(const juce::dsp::AudioBlock<FloatType> &block,
+                     const shaper::BandShaper<FloatType> *bandShaper) noexcept {
+        const auto wet = m_wet.load();
+        const auto dry = m_dry.load();
+        const auto drive = driveGain.load();
+        const auto midSide = midSideAmount.load();
+        const auto numSamples = block.getNumSamples();
+        const auto numChannels = block.getNumChannels();
+        if (numChannels > 1 && std::abs(midSide) > static_cast<FloatType>(1e-4)) {
+            const auto wetMid = wet * juce::jlimit(static_cast<FloatType>(0), static_cast<FloatType>(1),
+                                                   static_cast<FloatType>(1) - midSide);
+            const auto wetSide = wet * juce::jlimit(static_cast<FloatType>(0), static_cast<FloatType>(1),
+                                                    static_cast<FloatType>(1) + midSide);
+            auto left = block.getChannelPointer(0);
+            auto right = block.getChannelPointer(1);
+            for (size_t s = 0; s < numSamples; ++s) {
+                const auto midSignal = (left[s] + right[s]) * static_cast<FloatType>(0.5);
+                const auto sideSignal = (left[s] - right[s]) * static_cast<FloatType>(0.5);
+                const auto midOut = shape(*bandShaper, midSignal, wetMid,
+                                          static_cast<FloatType>(1) - wetMid, drive);
+                const auto sideOut = shape(*bandShaper, sideSignal, wetSide,
+                                           static_cast<FloatType>(1) - wetSide, drive);
+                left[s] = midOut + sideOut;
+                right[s] = midOut - sideOut;
+            }
+            for (size_t ch = 2; ch < numChannels; ++ch) {
+                auto data = block.getChannelPointer(ch);
+                for (size_t s = 0; s < numSamples; ++s) {
+                    data[s] = shape(*bandShaper, data[s], wet, dry, drive);
+                }
+            }
+            return;
+        }
+        for (size_t ch = 0; ch < numChannels; ++ch) {
+            auto data = block.getChannelPointer(ch);
+            for (size_t s = 0; s < numSamples; ++s) {
+                data[s] = shape(*bandShaper, data[s], wet, dry, drive);
+            }
+        }
+    }
+
     /** the odd symmetric transfer function of one band: the shaper only sees
         -1..1, and the dry signal is blended back in. */
     static FloatType shape(const shaper::BandShaper<FloatType> &bandShaper, FloatType x,
-                           FloatType wet, FloatType dry) {
+                           FloatType wet, FloatType dry, FloatType drive) {
         const auto sgn = x > 0 ? static_cast<FloatType>(1) : static_cast<FloatType>(-1);
-        return bandShaper(juce::jmin(static_cast<FloatType>(1), std::abs(x))) * wet * sgn + x * dry;
+        const auto driven = juce::jmin(static_cast<FloatType>(1), std::abs(x) * drive);
+        // the shaped part is scaled back by the drive, so a band keeps its
+        // level while it saturates harder
+        return bandShaper(driven) * wet * sgn / drive + x * dry;
     }
 
     juce::AudioProcessor *processorRef;
@@ -274,6 +327,8 @@ private:
     std::atomic<FloatType> m_wet = static_cast<FloatType>(zldsp::wet::formatV(zldsp::wet::defaultV));
     std::atomic<FloatType> m_dry = static_cast<FloatType>(1) -
                                    static_cast<FloatType>(zldsp::wet::formatV(zldsp::wet::defaultV));
+    std::atomic<FloatType> midSideAmount = static_cast<FloatType>(0);
+    std::atomic<FloatType> driveGain = static_cast<FloatType>(1);
     std::array<std::unique_ptr<juce::dsp::Oversampling<FloatType>>, numSamplers>
             overSamplers{};
     std::atomic<size_t> idxSampler = zldsp::overSample::defaultI;
@@ -290,12 +345,13 @@ public:
         apvts = &parameters;
     }
 
-    static constexpr std::array<const char *, 15> getIDs() {
+    static constexpr std::array<const char *, 17> getIDs() {
         return {zldsp::effectIn::ID, zldsp::wet::ID, zldsp::autoGain::ID,
                 zldsp::lowSplit::ID, zldsp::highSplit::ID, zldsp::overSample::ID,
                 zldsp::styleLow::ID, zldsp::curveLow::ID,
                 zldsp::styleMid::ID, zldsp::curveMid::ID,
-                zldsp::styleHigh::ID, zldsp::curveHigh::ID, zldsp::bandGainLow::ID, zldsp::bandGainMid::ID, zldsp::bandGainHigh::ID};
+                zldsp::styleHigh::ID, zldsp::curveHigh::ID, zldsp::bandGainLow::ID, zldsp::bandGainMid::ID, zldsp::bandGainHigh::ID,
+                zldsp::midSide::ID, zldsp::drive::ID};
     }
 
     void addListeners() {
@@ -350,6 +406,10 @@ public:
             waveShaper->setBandType(band, static_cast<size_t>(newValue));
         } else if (parameterID == zldsp::overSample::ID) {
             waveShaper->setOverSampleFactor(static_cast<int>(newValue));
+        } else if (parameterID == zldsp::midSide::ID) {
+            waveShaper->setMidSide(static_cast<FloatType>(newValue) / static_cast<FloatType>(100));
+        } else if (parameterID == zldsp::drive::ID) {
+            waveShaper->setDrive(static_cast<FloatType>(newValue));
         }
     }
 

@@ -19,8 +19,10 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 namespace zlpanel {
-    /** The global trim of every band at once: the input and output gain and the
-        wet mix. They share the header strip left of the meters. */
+    /** The global trim of every band at once: the input and output gain, the
+        drive every band shaper is fed with, the wet mix and how far the two
+        stereo sides are processed. They share the header strip left of the
+        meters. */
     class FooterPanel : public juce::Component {
     public:
         FooterPanel(juce::AudioProcessorValueTreeState &audioParameters, zlinterface::UIBase &base);
@@ -40,9 +42,11 @@ namespace zlpanel {
     private:
         juce::AudioProcessorValueTreeState &apvts;
 
-        std::unique_ptr<zlinterface::RotarySliderComponent> inputGain, outputGain, wet;
-        std::array<std::unique_ptr<zlinterface::RotarySliderComponent> *, 3> knobList{
-                &inputGain, &outputGain, &wet};
+        /** in, out, drive, wet and the mid/side focus share one row */
+        constexpr static size_t NumKnobs = 5;
+        std::unique_ptr<zlinterface::RotarySliderComponent> inputGain, outputGain, drive, wet, midSide;
+        std::array<std::unique_ptr<zlinterface::RotarySliderComponent> *, NumKnobs> knobList{
+                &inputGain, &outputGain, &drive, &wet, &midSide};
         juce::OwnedArray<juce::AudioProcessorValueTreeState::SliderAttachment> sliderAttachments;
 
         zlinterface::UIBase *uiBase;

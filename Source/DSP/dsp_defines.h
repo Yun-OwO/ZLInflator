@@ -289,6 +289,25 @@ namespace zldsp {
         auto static constexpr defaultV = 0.0f;
     };
 
+    /** how far the two stereo sides are processed, left of the centre only the
+        mid is saturated, right of it only the side, the centre is both */
+    class midSide : public FloatParameters<midSide> {
+    public:
+        auto static constexpr ID = "mid_side";
+        auto static constexpr name = "Mid/Side (%)";
+        inline auto static const range = juce::NormalisableRange<float>(-100.f, 100.f, 0.1f);
+        auto static constexpr defaultV = 0.0f;
+    };
+
+    /** the drive every band is fed with, in decibels */
+    class drive : public FloatParameters<drive> {
+    public:
+        auto static constexpr ID = "drive";
+        auto static constexpr name = "Drive (dB)";
+        inline auto static const range = juce::NormalisableRange<float>(-12.f, 24.f, 0.1f, 0.6, true);
+        auto static constexpr defaultV = 0.0f;
+    };
+
     inline juce::AudioProcessorValueTreeState::ParameterLayout getParameterLayout() {
         juce::AudioProcessorValueTreeState::ParameterLayout layout;
         // the parameters of the two shaper mixer are kept at their former
@@ -303,7 +322,8 @@ namespace zldsp {
                    styleLow::get(), curveLow::get(),
                    styleMid::get(), curveMid::get(),
                    styleHigh::get(), curveHigh::get(),
-                   bandGainLow::get(), bandGainMid::get(), bandGainHigh::get());
+                   bandGainLow::get(), bandGainMid::get(), bandGainHigh::get(),
+                   midSide::get(), drive::get());
         return layout;
     }
 }

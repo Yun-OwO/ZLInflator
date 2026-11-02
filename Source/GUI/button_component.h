@@ -29,7 +29,22 @@ namespace zlinterface {
             addAndMakeVisible(button);
             label.setText(labelText, juce::dontSendNotification);
             label.setLookAndFeel(&nameLookAndFeel);
+            // the caption never swallows the wheel, it belongs to the button
+            label.setInterceptsMouseClicks(false, false);
             addAndMakeVisible(label);
+        }
+
+        void mouseWheelMove(const juce::MouseEvent &, const juce::MouseWheelDetails &wheel) override {
+            if (wheel.deltaY == 0.0f) {
+                return;
+            }
+            // a wheel throws a burst of events, one flip per gesture is enough
+            const auto now = juce::Time::getMillisecondCounter();
+            if (now - lastWheelTime < 150) {
+                return;
+            }
+            lastWheelTime = now;
+            button.setToggleState(!button.getToggleState(), juce::sendNotificationSync);
         }
 
         ~ButtonComponent() override {
@@ -89,6 +104,7 @@ namespace zlinterface {
         constexpr static float buttonRatio = 0.45f;
 
         UIBase *uiBase;
+        juce::uint32 lastWheelTime = 0;
     };
 }
 

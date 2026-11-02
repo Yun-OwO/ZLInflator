@@ -19,7 +19,9 @@ namespace zlpanel {
             apvts(audioParameters), uiBase(&base) {
         inputGain = std::make_unique<zlinterface::RotarySliderComponent>("In", base);
         outputGain = std::make_unique<zlinterface::RotarySliderComponent>("Out", base);
+        drive = std::make_unique<zlinterface::RotarySliderComponent>("Drive", base);
         wet = std::make_unique<zlinterface::RotarySliderComponent>("Wet", base);
+        midSide = std::make_unique<zlinterface::RotarySliderComponent>("M / S", base);
         for (auto *knob : knobList) {
             addAndMakeVisible(knob->get());
         }
@@ -29,7 +31,9 @@ namespace zlpanel {
         };
         addAttachment(zldsp::inputGain::ID, inputGain.get());
         addAttachment(zldsp::outputGain::ID, outputGain.get());
+        addAttachment(zldsp::drive::ID, drive.get());
         addAttachment(zldsp::wet::ID, wet.get());
+        addAttachment(zldsp::midSide::ID, midSide.get());
     }
 
     FooterPanel::~FooterPanel() = default;
@@ -39,21 +43,22 @@ namespace zlpanel {
     }
 
     float FooterPanel::getPreferredWidth(float fontSize) {
-        return fontSize * 3.f * KnobCellWidth;
+        return fontSize * static_cast<float>(NumKnobs) * KnobCellWidth;
     }
 
     float FooterPanel::getPreferredHeight(float fontSize) {
         return fontSize * zlinterface::KnobRowHeight;
     }
 
+
     void FooterPanel::resized() {
         auto bound = getLocalBounds().toFloat();
         if (bound.getWidth() <= 0.f || bound.getHeight() <= 0.f) {
             return;
         }
-        const auto unitWidth = bound.getWidth() / 3.f;
-        inputGain->setBounds(bound.removeFromLeft(unitWidth).toNearestInt());
-        outputGain->setBounds(bound.removeFromLeft(unitWidth).toNearestInt());
-        wet->setBounds(bound.toNearestInt());
+        const auto unitWidth = bound.getWidth() / static_cast<float>(NumKnobs);
+        for (auto *knob : knobList) {
+            (*knob)->setBounds(bound.removeFromLeft(unitWidth).toNearestInt());
+        }
     }
 }

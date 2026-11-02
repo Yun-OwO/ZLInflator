@@ -33,7 +33,13 @@ namespace zlinterface {
             // setup label
             label.setText(labelText, juce::dontSendNotification);
             label.setLookAndFeel(&nameLookAndFeel);
+            // the caption never swallows the wheel, it belongs to the knob
+            label.setInterceptsMouseClicks(false, false);
             addAndMakeVisible(label);
+        }
+
+        void mouseWheelMove(const juce::MouseEvent &, const juce::MouseWheelDetails &wheel) override {
+            applyWheelToSlider(slider, wheel);
         }
 
         ~RotarySliderComponent() override {

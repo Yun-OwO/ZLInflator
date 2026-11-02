@@ -285,6 +285,19 @@ namespace zlinterface {
         }
     }
 
+    /** one wheel notch moves a slider by its own step, so a knob and a drag bar
+        answer the wheel exactly the way they answer a drag or an arrow key */
+    inline void applyWheelToSlider(juce::Slider &slider, const juce::MouseWheelDetails &wheel) {
+        if (wheel.deltaY == 0.0f) {
+            return;
+        }
+        const auto interval = slider.getInterval();
+        const auto step = interval > 0.0 ? interval
+                                         : (slider.getMaximum() - slider.getMinimum()) * 0.01;
+        const auto direction = (wheel.deltaY > 0.0f ? 1.0 : -1.0) * (wheel.isReversed ? -1.0 : 1.0);
+        slider.setValue(slider.getValue() + direction * step, juce::sendNotificationSync);
+    }
+
     class UIBase {
     public:
         UIBase() {
