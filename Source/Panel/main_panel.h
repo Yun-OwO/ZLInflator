@@ -40,15 +40,30 @@ public:
 
     void mouseWheelMove(const juce::MouseEvent &, const juce::MouseWheelDetails &) override;
 
+    /** A plain click flips between these two choices instead of walking the
+        whole list, the wheel still walks them all. */
+    void setTogglePair(int offChoice, int onChoice);
+
+    /** The pill reads this while the first choice is picked. */
+    void setOffCaption(const juce::String &text);
+
 private:
     void step(int direction);
 
     void refresh();
 
+    int getChoiceIndex() const;
+
+    void goTo(int index);
+
     juce::AudioProcessorValueTreeState &parameters;
     juce::RangedAudioParameter *parameter;
     const juce::String parameterID;
     int numChoices = 0;
+    juce::String offCaption;
+    int toggleOff = 0;
+    int toggleOn = 1;
+    bool hasTogglePair = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ChoiceButton)
 };

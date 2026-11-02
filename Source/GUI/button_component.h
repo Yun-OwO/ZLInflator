@@ -55,12 +55,20 @@ namespace zlinterface {
 
         void resized() override {
             auto bound = getLocalBounds().toFloat();
-            const auto captionHeight = juce::jmin(bound.getHeight(),
-                                                  uiBase->getFontSize() * zlinterface::ControlCaptionHeight);
-            label.setBounds(bound.removeFromTop(captionHeight).toNearestInt());
+            if (label.isVisible()) {
+                const auto captionHeight = juce::jmin(bound.getHeight(),
+                                                      uiBase->getFontSize() * zlinterface::ControlCaptionHeight);
+                label.setBounds(bound.removeFromTop(captionHeight).toNearestInt());
+            }
             const auto buttonHeight = juce::jmin(bound.getHeight(),
                                                  uiBase->getFontSize() * zlinterface::ControlHeight);
             button.setBounds(bound.withSizeKeepingCentre(bound.getWidth(), buttonHeight).toNearestInt());
+        }
+
+        /** Drops the small title above the pill, the pill takes the whole cell. */
+        void setTitleVisible(bool f) {
+            label.setVisible(f);
+            resized();
         }
 
         void paint(juce::Graphics &g) override {
@@ -84,6 +92,12 @@ namespace zlinterface {
 
         void setCaptionFontSize(float size) {
             myLookAndFeel.setCaptionFontSize(size);
+            button.repaint();
+        }
+
+        /** Dims the caption while the toggle is off instead of the value text. */
+        void setCaptionFollowsToggle(bool f) {
+            myLookAndFeel.setCaptionFollowsToggle(f);
             button.repaint();
         }
 

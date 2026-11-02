@@ -32,6 +32,12 @@ ChoiceButton::ChoiceButton(ZLInflatorAudioProcessor &p, const juce::String &labe
     // the toggle child swallows the clicks, so step from its own callback: it
     // fires on the release inside the cell and leaves the modifier keys at hand
     getButton().onClick = [this] {
+        if (hasTogglePair) {
+            // a packed switch: a click flips the two states, the wheel walks
+            // through every choice there is
+            goTo(getChoiceIndex() == toggleOff ? toggleOn : toggleOff);
+            return;
+        }
         step(juce::ModifierKeys::currentModifiers.isRightButtonDown() ? -1 : 1);
     };
     refresh();
@@ -54,22 +60,51 @@ void ChoiceButton::mouseWheelMove(const juce::MouseEvent &, const juce::MouseWhe
     step(details.deltaY >= 0.f ? 1 : -1);
 }
 
+int ChoiceButton::getChoiceIndex() const {
+    if (parameter == nullptr) {
+        return 0;
+    }
+    return juce::roundToInt(parameter->convertFrom0to1(parameter->getValue()));
+}
+
+void ChoiceButton::goTo(int index) {
+    if (parameter == nullptr || numChoices <= 0) {
+        return;
+    }
+    const auto choice = juce::jlimit(0, numChoices - 1, index);
+    parameter->setValueNotifyingHost(parameter->convertTo0to1(static_cast<float>(choice)));
+    refresh();
+}
+
+void ChoiceButton::setTogglePair(int offChoice, int onChoice) {
+    toggleOff = offChoice;
+    toggleOn = onChoice;
+    hasTogglePair = true;
+}
+
 void ChoiceButton::step(int direction) {
     if (parameter == nullptr || numChoices <= 0) {
         return;
     }
-    const auto current = juce::roundToInt(parameter->convertFrom0to1(parameter->getValue()));
-    const auto next = (current + direction + numChoices) % numChoices;
-    parameter->setValueNotifyingHost(parameter->convertTo0to1(static_cast<float>(next)));
-    refresh();
+    goTo((getChoiceIndex() + direction + numChoices) % numChoices);
 }
 
 void ChoiceButton::refresh() {
     if (parameter == nullptr) {
         return;
     }
-    setCaption(parameter->getCurrentValueAsText());
+    const auto index = getChoiceIndex();
+    // the pill carries the name of the switch while it is off and the picked
+    // value once it is on, the way the A/B switch reads
+    setCaption(index == 0 && offCaption.isNotEmpty() ? offCaption
+                                                     : parameter->getCurrentValueAsText());
+    setEditable(index != 0);
     repaint();
+}
+
+void ChoiceButton::setOffCaption(const juce::String &text) {
+    offCaption = text;
+    refresh();
 }
 
 MainPanel::MainPanel(ZLInflatorAudioProcessor &p) :
@@ -96,11 +131,19 @@ MainPanel::MainPanel(ZLInflatorAudioProcessor &p) :
     effectAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
             p.parameters, zldsp::effectIn::ID, effectButton->getButton());
     addAndMakeVisible(*effectButton);
+    // without a title the pill takes the whole cell, the way the A/B switch does
     compensationButton = std::make_unique<zlinterface::ButtonComponent>("Auto Gain", uiBase);
+    compensationButton->setTitleVisible(false);
+    compensationButton->setCaption("Auto Gain");
+    compensationButton->setCaptionFollowsToggle(true);
     compensationAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
             p.parameters, zldsp::autoGain::ID, compensationButton->getButton());
     addAndMakeVisible(*compensationButton);
-    overSampleButton = std::make_unique<ChoiceButton>(p, "Over Sampling", zldsp::overSample::ID, uiBase);
+    overSampleButton = std::make_unique<ChoiceButton>(p, "", zldsp::overSample::ID, uiBase);
+    overSampleButton->setTitleVisible(false);
+    // a click is an on/off switch: off is the plain path, on is 4x oversampling
+    overSampleButton->setTogglePair(0, 2);
+    overSampleButton->setOffCaption("HQ");
     addAndMakeVisible(*overSampleButton);
     addAndMakeVisible(logoPanel);
     addAndMakeVisible(bandPanel);

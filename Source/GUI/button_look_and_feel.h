@@ -32,7 +32,10 @@ namespace zlinterface {
             uiBase->fillRoundedInnerShadowRectangle(g, bounds, uiBase->getFontSize() * 0.5f, {.blurRadius=0.45f, .flip=true});
             // a caption replaces the ON/OFF pair for buttons that carry their own text
             if (caption.isNotEmpty()) {
-                g.setColour(editable.load() ? uiBase->getTextColor() : uiBase->getTextInactiveColor());
+                // a caption that reports a toggle goes dim when the toggle is
+                // off, the others are lit as long as the control is editable
+                const auto lit = captionFollowsToggle ? button.getToggleState() : editable.load();
+                g.setColour(lit ? uiBase->getTextColor() : uiBase->getTextInactiveColor());
                 // the caption is drawn on the pill, so its size follows the pill
                 // before the shadows ate into the bounds
                 g.setFont(juce::jmax(uiBase->getFontSize() > 0 ? uiBase->getFontSize() * FontNormal
@@ -134,8 +137,13 @@ namespace zlinterface {
             captionFontSize = size;
         }
 
+        void setCaptionFollowsToggle(bool f) {
+            captionFollowsToggle = f;
+        }
+
     private:
         std::atomic<bool> editable = true;
+        bool captionFollowsToggle = false;
         juce::String caption;
         juce::String pairOff, pairOn;
         float captionFontSize = 0.f;
