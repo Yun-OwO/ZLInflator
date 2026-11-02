@@ -57,12 +57,18 @@ namespace zlinterface {
         // read the parameters straight from the tree, a repaint can outrun the
         // async callback that announces a change
         refreshParameters();
-        auto bound = getLocalBounds().toFloat();
+        const auto bound = getLocalBounds().toFloat();
         const auto fontSize = uiBase.getFontSize();
-        auto innerBound = uiBase.fillRoundedShadowRectangle(g, bound, fontSize * .5f,
-                                                            {.mainColour=uiBase.getBackgroundColor()});
-        innerBound = uiBase.fillRoundedInnerShadowRectangle(g, innerBound, fontSize * .5f,
-                                                            {.blurRadius=0.45f, .flip=true});
+        // the card fills the whole frame: the helper fits it to the shadow, so
+        // the rectangle has to be grown by that inset first, otherwise the card
+        // would end a good margin inside its own bounds
+        const auto cornerSize = fontSize * .5f;
+        const auto radius = juce::jmax(std::round(cornerSize * .5f * 1.5f), 1.f);
+        const auto cardBound = bound.expanded(radius + 1.42f * cornerSize);
+        uiBase.fillRoundedShadowRectangle(g, cardBound, cornerSize,
+                                          {.mainColour=uiBase.getBackgroundColor()});
+        uiBase.fillRoundedInnerShadowRectangle(g, cardBound, cornerSize,
+                                               {.blurRadius=0.45f, .flip=true});
         const auto plotBound = getPlotBound();
         if (plotBound.isEmpty()) {
             return;
@@ -508,15 +514,16 @@ namespace zlinterface {
 
     juce::Rectangle<float> BandPlotComponent::getPlotBound() const {
         const auto fontSize = uiBase.getFontSize();
-        // the card takes one inset, the graph the small margin inside it: the
-        // figure has to start right under the switches, so it cannot afford the
-        // second, wider inset the old panel used
+        // the card fills the component, the graph keeps a margin inside it and
+        // a little more at the top, where the split handles and their labels sit
         auto bound = getLocalBounds().toFloat();
-        bound = uiBase.getRoundedShadowRectangleArea(bound, fontSize * .5f, {});
+        bound = bound.withTrimmedTop(fontSize * .85f)
+                    .withTrimmedBottom(fontSize * .35f)
+                    .reduced(fontSize * .45f, 0.f);
         if (bound.getWidth() <= 0 || bound.getHeight() <= 0) {
             return {};
         }
-        return bound.reduced(fontSize * 0.45f, fontSize * 0.3f);
+        return bound;
     }
 
     juce::Rectangle<float> BandPlotComponent::getHandleBound(float x) const {

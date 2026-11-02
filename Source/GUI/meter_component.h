@@ -37,11 +37,13 @@ namespace zlinterface {
         void paint(juce::Graphics &g) override {
             auto bound = getLocalBounds().toFloat();
             bound = bound.withTrimmedBottom(bound.getHeight() * 0.05f);
-            bound = uiBase->fillRoundedShadowRectangle(g, bound,
-                                                       uiBase->getFontSize() * .5f,
-                                                       {.blurRadius=.25f});
-            uiBase->fillRoundedInnerShadowRectangle(g, bound,
-                                                    uiBase->getFontSize() * .5f,
+            // the card fills the frame: the helper fits it to its shadow, so the
+            // rectangle is grown by that inset first
+            const auto cornerSize = uiBase->getFontSize() * .5f;
+            const auto radius = juce::jmax(std::round(cornerSize * .25f * 1.5f), 1.f);
+            const auto cardBound = bound.expanded(radius + 1.42f * cornerSize);
+            uiBase->fillRoundedShadowRectangle(g, cardBound, cornerSize, {.blurRadius=.25f});
+            uiBase->fillRoundedInnerShadowRectangle(g, cardBound, cornerSize,
                                                     {.blurRadius=.25f, .flip=true});
         }
 

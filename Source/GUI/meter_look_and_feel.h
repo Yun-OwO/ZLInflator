@@ -27,13 +27,16 @@ namespace zlinterface {
                         const std::vector<float> &peak,
                         const std::vector<float> &peakMax) {
 
-            auto bound = bounds.toFloat();
-            bound = uiBase->getRoundedShadowRectangleArea(bound,
-                                                          uiBase->getFontSize() * .5f,
-                                                          {.blurRadius=.25f});
+            // the card is drawn one inset inside the bounds, the scale has to
+            // start inside it as well, otherwise the numbers cut through the
+            // rounded top of the card
+            const auto inset = uiBase->getRoundedShadowRectangleArea(bounds.toFloat(),
+                                                                    uiBase->getFontSize() * .5f,
+                                                                    {.blurRadius=.25f});
+            auto bound = inset.withTrimmedTop(uiBase->getFontSize() * .12f);
             auto numberBound = bound;
 
-            auto meterWidth = bound.getWidth() / static_cast<float>(rms.size());
+            const auto meterWidth = bound.getWidth() / static_cast<float>(rms.size());
             numberBound = numberBound.withTrimmedTop(.05f * meterWidth);
             numberBound = numberBound.withTrimmedBottom(.05f * meterWidth);
             // the peak reading takes the head of the column, so the scale starts

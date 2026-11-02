@@ -131,33 +131,39 @@ void MainPanel::resized() {
     }
 
     // the strip of band controls runs along the bottom, the header row of the
-    // global knobs sits at the top, and the figure fills what is left over it
-    // between the two right hand columns: the oversampling switch over the auto
-    // gain switch, and the bypass switch over the meters
+    // global knobs sits at the top, and the figure fills what is left between
+    // them: the meter column takes the right hand edge, the two switches the
+    // right end of the figure, right over the top edge of the spectrum
     const auto stripHeight = juce::jmin(inner.getHeight() * 0.34f,
                                         fontSize * (zlinterface::ControlRowHeight
                                                     + zlinterface::ControlCaptionHeight + 1.8f));
-    const auto headerHeight = juce::jmin(fontSize * zlinterface::KnobRowHeight,
-                                         (inner.getHeight() - stripHeight) * .28f);
+    const auto cellGap = fontSize * .05f;
     // one switch cell is one row of the very same grid the band strip uses
     const auto switchHeight = juce::jmin(fontSize * zlinterface::ControlHeight,
                                          (inner.getHeight() - stripHeight) * .18f);
-    const auto cellGap = fontSize * .05f;
-    const auto figureBottom = inner.getBottom() - stripHeight;
-
     const auto switchCellWidth = juce::jmin(inner.getWidth() * 0.15f, fontSize * 4.4f);
-    auto rightBound = inner.removeFromRight(switchCellWidth * 2.f + fontSize * .3f);
-    auto overSampleColumn = rightBound.removeFromLeft(switchCellWidth);
-    rightBound.removeFromLeft(fontSize * .3f);
-    auto meterColumn = rightBound;
-    auto overSampleCell = overSampleColumn.removeFromTop(switchHeight);
-    auto gainCell = overSampleColumn.removeFromTop(switchHeight + cellGap);
-    auto bypassCell = meterColumn.removeFromTop(switchHeight + cellGap);
-    // the meters take the height of the figure, so both end on the strip and
-    // start on the line the switches of the columns end on
-    const auto figureTop = juce::jmax(inner.getY() + headerHeight,
-                                      juce::jmax(gainCell.getBottom(), bypassCell.getBottom()));
+    // the header row has to be tall enough to hold the two stacked switches
+    const auto headerHeight = juce::jmax(juce::jmin(fontSize * zlinterface::KnobRowHeight,
+                                                    (inner.getHeight() - stripHeight) * .28f),
+                                         switchHeight * 2.f + cellGap);
+    const auto figureBottom = inner.getBottom() - stripHeight;
+    // the header keeps a little air over the figure, so the shadow of the knobs
+    // never reaches the rounded top edge of the cards
+    const auto figureTop = inner.getY() + headerHeight + fontSize * .3f;
     const auto plotHeight = juce::jmax(0.f, figureBottom - figureTop);
+
+    const auto meterWidth = juce::jmin(inner.getWidth() * 0.13f, fontSize * 4.4f);
+    auto meterColumn = inner.removeFromRight(meterWidth);
+    // the two switches stack over the right end of the figure, their cells end
+    // on the very line the cards start on
+    const auto switchLeft = inner.getRight() - switchCellWidth;
+    auto switchColumn = juce::Rectangle<float>(switchLeft, figureTop - switchHeight * 2.f - cellGap,
+                                               switchCellWidth, switchHeight * 2.f + cellGap);
+    auto overSampleCell = switchColumn.removeFromTop(switchHeight);
+    switchColumn.removeFromTop(cellGap);
+    auto gainCell = switchColumn.removeFromTop(switchHeight);
+    auto bypassCell = juce::Rectangle<float>(meterColumn.getX(), figureTop - switchHeight,
+                                             meterColumn.getWidth(), switchHeight);
 
     overSampleButton->setBounds(overSampleCell.withSizeKeepingCentre(
             switchCellWidth, switchHeight).toNearestInt());
@@ -167,22 +173,15 @@ void MainPanel::resized() {
         const auto buttonWidth = juce::jmin(bypassCell.getWidth(), fontSize * 3.6f);
         effectButton->setBounds(bypassCell.withSizeKeepingCentre(buttonWidth, switchHeight).toNearestInt());
     }
-    // the figure cards are drawn inside their own bounds, so their rectangles
-    // have to be pushed up by that inset: the top edges of the spectrum and the
-    // meters then sit exactly on the row the switches end on, with no seam
-    const auto cardInset = [fontSize](float blurRadius) {
-        const auto cornerSize = fontSize * .5f;
-        const auto radius = juce::jmax(std::round(cornerSize * blurRadius * 1.5f), 1.f);
-        return radius + 1.42f * cornerSize;
-    };
-    const auto plotInset = cardInset(.5f);
-    const auto meterInset = cardInset(.25f);
-    meterPanel.setBounds(juce::Rectangle<float>(meterColumn.getX(), figureTop - meterInset,
-                                                meterColumn.getWidth(), plotHeight + meterInset)
-                                 .toNearestInt());
-    bandPlotComponent.setBounds(juce::Rectangle<float>(inner.getX(), figureTop - plotInset,
-                                                       inner.getWidth(), plotHeight + plotInset)
-                                        .reduced(fontSize * .2f, 0.f).toNearestInt());
+    // the spectrum keeps the width of the figure, with a gutter before the
+    // meter column so the two cards never read as one
+    const auto plotMargin = fontSize * .2f;
+    const auto plotGutter = fontSize * .5f;
+    meterPanel.setBounds(juce::Rectangle<float>(meterColumn.getX(), figureTop,
+                                                meterColumn.getWidth(), plotHeight).toNearestInt());
+    bandPlotComponent.setBounds(juce::Rectangle<float>(inner.getX(), figureTop,
+                                                       inner.getWidth() - plotGutter, plotHeight)
+                                        .reduced(plotMargin, 0.f).toNearestInt());
 
     auto bandBound = inner.removeFromBottom(stripHeight);
     bandPanel.setBounds(bandBound.reduced(fontSize * .2f, fontSize * .1f).toNearestInt());
@@ -192,7 +191,9 @@ void MainPanel::resized() {
             juce::jmin(headerBound.getWidth() * 0.22f, fontSize * 9.f)).toNearestInt());
     {
         // the knobs keep a column each of the very same width the band strip
-        // gives them, so the header reads as the first row of that grid
+        // gives them, so the header reads as the first row of that grid; they
+        // stay clear of the switch column on the right
+        headerBound.removeFromRight(switchCellWidth + fontSize * .5f);
         const auto knobWidth = juce::jmin(headerBound.getWidth(), fontSize * 3.f * 4.6f);
         footerPanel.setBounds(headerBound.withSizeKeepingCentre(
                 knobWidth, juce::jmin(headerBound.getHeight(), footerPanel.getPreferredHeight(fontSize))
