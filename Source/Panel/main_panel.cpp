@@ -196,13 +196,10 @@ void MainPanel::resized() {
     const auto plotBound = juce::Rectangle<float>(inner.getX(), figureTop,
                                                   inner.getWidth() - plotGutter, plotHeight)
             .reduced(plotMargin, 0.f);
-    // the switch pills end on the right edge of the spectrum card, the very
-    // line the figure closes on, and the drive knob takes the corner beyond it
-    const auto cardInset = [] (float fontSize) {
-        const auto cornerSize = fontSize * .5f;
-        return juce::jmax(std::round(cornerSize * .5f * 1.5f), 1.f) + 1.42f * cornerSize;
-    } (fontSize);
-    const auto switchLeft = plotBound.getRight() - cardInset - switchCellWidth;
+    // a pill is drawn one shadow inset inside its own bounds, exactly like the
+    // card of the figure, so matching the two bounds matches the two visible
+    // edges: the pills close on the very line the spectrum closes on
+    const auto switchLeft = plotBound.getRight() - switchCellWidth;
     auto switchColumn = juce::Rectangle<float>(switchLeft, figureTop - switchHeight * 2.f - cellGap,
                                                switchCellWidth, switchHeight * 2.f + cellGap);
     auto overSampleCell = switchColumn.removeFromTop(switchHeight);
@@ -213,7 +210,8 @@ void MainPanel::resized() {
                                              meterColumn.getWidth(), switchHeight);
     // the drive knob fills the empty corner under the meters, as big as the
     // split knobs of the band strip
-    auto driveBound = juce::Rectangle<float>(switchLeft, figureBottom, switchCellWidth,
+    auto driveBound = juce::Rectangle<float>(meterColumn.getX(), figureBottom,
+                                             meterColumn.getWidth(),
                                              inner.getBottom() - figureBottom);
 
     overSampleButton->setBounds(overSampleCell.withSizeKeepingCentre(
@@ -231,8 +229,6 @@ void MainPanel::resized() {
     bandPlotComponent.setBounds(plotBound.toNearestInt());
 
     auto bandBound = inner.removeFromBottom(stripHeight);
-    // the strip stops short of the drive knob, so the two never share a pixel
-    bandBound.setRight(juce::jmax(bandBound.getX(), switchLeft - fontSize * .3f));
     bandPanel.setBounds(bandBound.reduced(fontSize * .2f, fontSize * .1f).toNearestInt());
 
     auto headerBound = inner.removeFromTop(headerHeight);
