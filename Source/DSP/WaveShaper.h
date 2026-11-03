@@ -103,29 +103,47 @@ public:
         return &bandShapers[juce::jmin(band, static_cast<size_t>(numBands) - 1)];
     }
 
+    /** the curve the right hand channel runs, which is the one above opened by
+        the spread of that band */
+    shaper::BandShaper<FloatType> *getBandSpreadShaper(size_t band) {
+        return &bandShapersSpread[juce::jmin(band, static_cast<size_t>(numBands) - 1)];
+    }
+
     void setWet(FloatType wet) {
         m_wet.store(wet);
         m_dry.store(static_cast<FloatType>(1) - wet);
     }
 
     void setBandCurve(size_t band, FloatType curve, bool compensation) {
-        bandShapers[juce::jmin(band, static_cast<size_t>(numBands) - 1)]
-                .setParameters(curve, compensation);
+        const auto index = juce::jmin(band, static_cast<size_t>(numBands) - 1);
+        bandCurves[index] = curve;
+        bandCompensations[index] = compensation;
+        updateSpreadCurve(index);
     }
 
     void setBandType(size_t band, size_t type) {
-        bandShapers[juce::jmin(band, static_cast<size_t>(numBands) - 1)].setType(type);
+        const auto index = juce::jmin(band, static_cast<size_t>(numBands) - 1);
+        bandShapers[index].setType(type);
+        bandShapersSpread[index].setType(type);
+    }
+
+    /** 0 leaves both channels on the same curve, 1 gives the right channel the
+        most difference the band can take */
+    void setBandSpread(size_t band, FloatType amount) {
+        const auto index = juce::jmin(band, static_cast<size_t>(numBands) - 1);
+        spreadAmounts[index].store(juce::jlimit(static_cast<FloatType>(0), static_cast<FloatType>(1),
+                                                amount));
+        updateSpreadCurve(index);
+        updateEmphasis();
     }
 
     void setCutoffFrequency(FloatType lowFreq, FloatType highFreq) {
         const juce::GenericScopedLock<juce::CriticalSection> processLock(processorRef->getCallbackLock());
         filters[0].setCutoffFrequency(lowFreq);
         filters[1].setCutoffFrequency(highFreq);
-        // where the bass stops being widened follows the low crossover
-        if (!juce::approximatelyEqual(lowSplitFrequency.load(), lowFreq)) {
-            lowSplitFrequency = lowFreq;
-            updateBassMono();
-        }
+        lowSplitFrequency.store(lowFreq);
+        highSplitFrequency.store(highFreq);
+        updateEmphasis();
     }
 
     void setBandGain(size_t band, FloatType dB) {
@@ -146,12 +164,6 @@ public:
         driveGain.store(gain > static_cast<FloatType>(0) ? gain : static_cast<FloatType>(1));
     }
 
-    /** 0 keeps both channels on the same curve, 1 pulls them the furthest apart */
-    void setStereoSpread(FloatType amount) {
-        stereoSpreadAmount.store(juce::jlimit(static_cast<FloatType>(0), static_cast<FloatType>(1),
-                                              amount));
-    }
-
     void setEffectFlag(bool effectFlag) {
         effect.store(effectFlag);
     }
@@ -164,7 +176,28 @@ public:
         applyOverSampleSettings();
     }
 
+    /** one pole coefficients for the per channel emphasis: each band splits
+        around its own centre. */
+    void updateEmphasis() {
+        const auto rate = sampleRate.load() * static_cast<double>(size_t(1) << idxSampler.load());
+        const auto low = lowSplitFrequency.load();
+        const auto high = highSplitFrequency.load();
+        const auto centres = std::array<FloatType, 3>{
+                static_cast<FloatType>(std::sqrt(20.0 * juce::jmax(20.0f, low))),
+                static_cast<FloatType>(std::sqrt(juce::jmax(20.0f, low) * juce::jmax(20.0f, high))),
+                static_cast<FloatType>(std::sqrt(juce::jmax(20.0f, high) * 20000.0))};
+        for (size_t band = 0; band < centres.size(); ++band) {
+            const auto spread = spreadAmounts[band].load();
+            tiltAmount[band].store(spread * static_cast<FloatType>(0.5));
+            const auto ratio = juce::jlimit(0.0, 0.45, static_cast<double>(centres[band]) / rate);
+            emphasisCoefficient[band].store(static_cast<FloatType>(1.0 - std::exp(-2.0 * juce::MathConstants<double>::pi * ratio)));
+        }
+    }
+
     void reset() noexcept {
+        for (auto &bandState: emphasisState) {
+            bandState.fill(static_cast<FloatType>(0));
+        }
         for (size_t i = 0; i < numBands - 1; ++i) {
             filters[i].reset();
         }
@@ -172,13 +205,6 @@ public:
             if (overSamplers[i] != nullptr)
                 overSamplers[i]->reset();
         }
-        for (auto &bandDiffusion: sideDiffusion) {
-            for (auto &chain: bandDiffusion) {
-                chain.reset();
-            }
-        }
-        bassMonoState.fill(static_cast<FloatType>(0));
-        bassMonoPrevious.fill(static_cast<FloatType>(0));
     }
 
     bool isPrepared() const noexcept {
@@ -278,42 +304,30 @@ private:
         for (size_t i = 0; i < numBands - 1; ++i) {
             filters[i].update(static_cast<int>(idxSampler));
         }
-        prepareWidening();
         processorRef->setLatencySamples(
                 static_cast<int>(overSamplers[idxSampler]->getLatencyInSamples()));
+        updateEmphasis();
     }
 
-    /** saturates one band: at the centre of the mid/side control the two
-        channels are shaped as they are, off centre the band is taken apart and
-        only the mid or only the side is shaped, the other one passes dry.
-        The stereo spread works on the side of that arrangement: the side is
-        fed a little more drive and then run through two lengths of allpass
-        diffusion, which is what actually opens the image - the two channels
-        stop being a copy of one another instead of just getting louder.
-        Below the low crossover the side is progressively folded away, so the
-        bass stays centred and the widening never makes the low end wobble. */
+    /** saturates one band. Both channels run through the same shaper while the
+        spread is at zero; as it comes up the right hand channel is handed a
+        curve that saturates a little earlier and its own drive, so one band
+        leaves the shapers as two different harmonic series. That difference is
+        the width - it needs no side signal, so a mono input widens as well. */
     void processBand(const juce::dsp::AudioBlock<FloatType> &block,
                      const shaper::BandShaper<FloatType> *bandShaper, size_t band) noexcept {
         const auto wet = m_wet.load();
         const auto dry = m_dry.load();
         const auto drive = driveGain.load();
         const auto midSide = midSideAmount.load();
-        const auto spread = stereoSpreadAmount.load();
+        const auto spread = spreadAmounts[band].load();
         const auto numSamples = block.getNumSamples();
         const auto numChannels = block.getNumChannels();
-        const auto widen = numChannels > 1 &&
-                           (std::abs(midSide) > static_cast<FloatType>(1e-4) ||
-                            spread > static_cast<FloatType>(1e-4));
-        if (widen) {
+        if (numChannels > 1 && std::abs(midSide) > static_cast<FloatType>(1e-4)) {
             const auto wetMid = wet * juce::jlimit(static_cast<FloatType>(0), static_cast<FloatType>(1),
                                                    static_cast<FloatType>(1) - midSide);
             const auto wetSide = wet * juce::jlimit(static_cast<FloatType>(0), static_cast<FloatType>(1),
                                                     static_cast<FloatType>(1) + midSide);
-            const auto width = static_cast<FloatType>(1) + spread * spreadWidth[band];
-            // the side is shaped a little harder than the mid, its harmonics
-            // are what tell the two channels apart on top of the diffusion
-            const auto sideDrive = drive * (static_cast<FloatType>(1) + spread * static_cast<FloatType>(0.6));
-            const auto alpha = bassMonoAlpha[band];
             auto left = block.getChannelPointer(0);
             auto right = block.getChannelPointer(1);
             for (size_t s = 0; s < numSamples; ++s) {
@@ -321,25 +335,10 @@ private:
                 const auto sideSignal = (left[s] - right[s]) * static_cast<FloatType>(0.5);
                 const auto midOut = shape(*bandShaper, midSignal, wetMid,
                                           static_cast<FloatType>(1) - wetMid, drive);
-                auto centred = shape(*bandShaper, sideSignal, wetSide,
-                                     static_cast<FloatType>(1) - wetSide, sideDrive);
-                if (alpha > static_cast<FloatType>(0)) {
-                    // one pole high pass on the side: the low end loses its
-                    // difference between the channels as the spread comes up
-                    bassMonoState[band] = alpha * (bassMonoState[band] + centred - bassMonoPrevious[band]);
-                    bassMonoPrevious[band] = centred;
-                    centred += spread * (bassMonoState[band] - centred);
-                }
-                // the two chains are fed the same signal and fade the other
-                // way round in each channel, so the pair the channels receive
-                // loses its correlation as the spread comes up - at zero both
-                // channels still get the untouched side
-                const auto front = sideDiffusion[band][0].process(centred);
-                const auto back = sideDiffusion[band][1].process(centred);
-                const auto sideOutLeft = centred + spread * (front - centred);
-                const auto sideOutRight = centred + spread * (back - centred);
-                left[s] = midOut + sideOutLeft * width;
-                right[s] = midOut - sideOutRight * width;
+                const auto sideOut = shape(*bandShaper, sideSignal, wetSide,
+                                           static_cast<FloatType>(1) - wetSide, drive);
+                left[s] = midOut + sideOut;
+                right[s] = midOut - sideOut;
             }
             for (size_t ch = 2; ch < numChannels; ++ch) {
                 auto data = block.getChannelPointer(ch);
@@ -349,105 +348,47 @@ private:
             }
             return;
         }
+        // the two channels run the same curve and the same drive; the spread
+        // tilts one towards the bottom of the band and the other towards the
+        // top before the shaper, so the same note comes out of the left and the
+        // right hand shaper with different harmonics out of reach of any DC
+        // offset - a mono input widens too
         for (size_t ch = 0; ch < numChannels; ++ch) {
             auto data = block.getChannelPointer(ch);
+            const auto isRight = numChannels > 1 && (ch % 2) == 1;
+            const auto *channelShaper = isRight ? &bandShapersSpread[band] : bandShaper;
+            auto &emphasis = emphasisState[band][isRight ? 1 : 0];
+            const auto coefficient = emphasisCoefficient[band].load();
+            // the two tilts mirror each other, and their tilted halves sit on
+            // opposite sides of the frequency the band is centred on, so
+            // neither channel gains more of the signal than the other
+            const auto amount = tiltAmount[band].load();
+            const auto highGain = isRight ? static_cast<FloatType>(1) + amount : static_cast<FloatType>(1) - amount;
+            const auto lowGain = isRight ? static_cast<FloatType>(1) - amount : static_cast<FloatType>(1) + amount;
             for (size_t s = 0; s < numSamples; ++s) {
-                data[s] = shape(*bandShaper, data[s], wet, dry, drive);
+                const auto sample = data[s];
+                emphasis += coefficient * (sample - emphasis);
+                const auto pushed = emphasis * lowGain + (sample - emphasis) * highGain;
+                data[s] = shape(*bandShaper, pushed, wet, dry, drive);
             }
         }
     }
 
-    /** a short chain of allpass delays: it smears the side signal in time
-        without touching its level, so two different chains hand the left and
-        the right channel two versions of the side that no longer line up */
-    class SideDiffusion {
-    public:
-        constexpr static size_t stages() noexcept { return numStages; }
-
-        void prepare(double sampleRate, FloatType newCoefficient,
-                     const std::array<double, stages()> &milliSeconds) {
-            coefficient = newCoefficient;
-            for (size_t i = 0; i < numStages; ++i) {
-                const auto length = juce::jmax(1, juce::roundToInt(
-                        milliSeconds[i] * 0.001 * sampleRate));
-                lines[i].assign(static_cast<size_t>(length), static_cast<FloatType>(0));
-                writeIndex[i] = 0;
-            }
-        }
-
-        void reset() noexcept {
-            for (auto &line: lines) {
-                std::fill(line.begin(), line.end(), static_cast<FloatType>(0));
-            }
-            writeIndex.fill(0);
-        }
-
-        FloatType process(FloatType x) noexcept {
-            for (size_t i = 0; i < numStages; ++i) {
-                auto &line = lines[i];
-                if (line.empty()) {
-                    continue;
-                }
-                const auto delayed = line[writeIndex[i]];
-                const auto out = -coefficient * x + delayed;
-                line[writeIndex[i]] = x + coefficient * out;
-                if (++writeIndex[i] >= line.size()) {
-                    writeIndex[i] = 0;
-                }
-                x = out;
-            }
-            return x;
-        }
-
-    private:
-        constexpr static size_t numStages = 3;
-        std::array<std::vector<FloatType>, numStages> lines;
-        std::array<size_t, numStages> writeIndex{};
-        FloatType coefficient = static_cast<FloatType>(0.62);
-    };
-
-    /** (re)build the diffusion lines at the rate the bands are actually
-        processed at, and the bass mono filter for the current crossover */
-    void prepareWidening() {
-        const auto overSampledRate = sampleRate.load() *
-                                     static_cast<double>(static_cast<size_t>(1) << idxSampler.load());
-        if (overSampledRate <= 0.0) {
-            return;
-        }
-        for (size_t band = 0; band < numBands; ++band) {
-            const auto &base = diffusionMilliSeconds[band];
-            std::array<double, SideDiffusion::stages()> left{}, right{};
-            for (size_t i = 0; i < left.size(); ++i) {
-                left[i] = base[i];
-                // the right hand chain is longer, which is what makes the two
-                // channels drift apart instead of staying one signal
-                right[i] = base[i] * 1.41;
-            }
-            sideDiffusion[band][0].prepare(overSampledRate, static_cast<FloatType>(0.62), left);
-            sideDiffusion[band][1].prepare(overSampledRate, static_cast<FloatType>(0.58), right);
-        }
-        updateBassMono();
-    }
-
-    /** the side is folded towards mono under the low crossover: bands below it
-        get the filter, the top band keeps its side untouched */
-    void updateBassMono() {
-        const auto overSampledRate = sampleRate.load() *
-                                     static_cast<double>(static_cast<size_t>(1) << idxSampler.load());
-        if (overSampledRate <= 0.0) {
-            return;
-        }
-        const auto corner = juce::jlimit(static_cast<FloatType>(0), static_cast<FloatType>(400),
-                                         lowSplitFrequency.load() * static_cast<FloatType>(0.5));
-        for (size_t band = 0; band < numBands; ++band) {
-            if (band == numBands - 1 || corner <= static_cast<FloatType>(0)) {
-                bassMonoAlpha[band] = static_cast<FloatType>(0);
-                continue;
-            }
-            const auto omega = static_cast<double>(corner) * 2.0 * juce::MathConstants<double>::pi /
-                               overSampledRate;
-            bassMonoAlpha[band] = static_cast<FloatType>(1.0 / (1.0 + omega));
-        }
+    /** keeps the curves the figure draws in step with the parameter values:
+        both channels run the same curve, the spread tilts them apart in
+        processBand(). */
+    void updateSpreadCurve(size_t band) {
+        const auto spread = spreadAmounts[band].load();
+        const auto curve = bandCurves[band];
+        const auto compensation = bandCompensations[band];
+        const auto eased = curve * (static_cast<FloatType>(1) -
+                                    spread * static_cast<FloatType>(0.35));
+        const auto pushed = curve + spread * (static_cast<FloatType>(1) - curve);
+        bandShapers[band].setParameters(juce::jlimit(static_cast<FloatType>(0),
+                                                     static_cast<FloatType>(1), eased), compensation);
+        bandShapersSpread[band].setParameters(juce::jlimit(static_cast<FloatType>(0),
+                                                           static_cast<FloatType>(1), pushed),
+                                              compensation);
     }
 
     /** the odd symmetric transfer function of one band: the shaper only sees
@@ -470,25 +411,23 @@ private:
     std::atomic<FloatType> m_dry = static_cast<FloatType>(1) -
                                    static_cast<FloatType>(zldsp::wet::formatV(zldsp::wet::defaultV));
     std::atomic<FloatType> midSideAmount = static_cast<FloatType>(0);
-    std::atomic<FloatType> stereoSpreadAmount = static_cast<FloatType>(0);
-    // per band: how much of the doubling comes from width rather than diffusion
-    std::array<FloatType, numBands> spreadWidth{
-            {static_cast<FloatType>(0.05), static_cast<FloatType>(0.08), static_cast<FloatType>(0.12)}};
-    // allpass lengths in milliseconds, the second chain runs 1.41 times longer
-    std::array<std::array<double, 3>, numBands> diffusionMilliSeconds{{
-            {2.9, 7.3, 13.1}, {1.7, 4.3, 9.7}, {0.9, 2.3, 5.9}}};
-    std::array<std::array<SideDiffusion, 2>, numBands> sideDiffusion{};
-    std::array<FloatType, numBands> bassMonoAlpha{{static_cast<FloatType>(0),
-                                                   static_cast<FloatType>(0),
-                                                   static_cast<FloatType>(0)}};
-    std::array<FloatType, numBands> bassMonoState{{static_cast<FloatType>(0),
-                                                   static_cast<FloatType>(0),
-                                                   static_cast<FloatType>(0)}};
-    std::array<FloatType, numBands> bassMonoPrevious{{static_cast<FloatType>(0),
-                                                      static_cast<FloatType>(0),
-                                                      static_cast<FloatType>(0)}};
-    std::atomic<FloatType> lowSplitFrequency = static_cast<FloatType>(zldsp::lowSplit::defaultV);
+    std::array<std::atomic<FloatType>, numBands> spreadAmounts{
+            {static_cast<FloatType>(0), static_cast<FloatType>(0), static_cast<FloatType>(0)}};
+    // the right hand channel of every band runs a curve of its own, which
+    // follows the curve above and the spread of that band
+    std::array<shaper::BandShaper<FloatType>, numBands> bandShapersSpread;
+    std::array<FloatType, numBands> bandCurves{{static_cast<FloatType>(0),
+                                                static_cast<FloatType>(0),
+                                                static_cast<FloatType>(0)}};
+    std::array<bool, numBands> bandCompensations{{false, false, false}};
     std::atomic<FloatType> driveGain = static_cast<FloatType>(1);
+    std::atomic<FloatType> lowSplitFrequency = static_cast<FloatType>(zldsp::lowSplit::defaultV);
+    std::atomic<FloatType> highSplitFrequency = static_cast<FloatType>(zldsp::highSplit::defaultV);
+    std::array<std::atomic<FloatType>, numBands> tiltAmount{
+            {static_cast<FloatType>(0), static_cast<FloatType>(0), static_cast<FloatType>(0)}};
+    std::array<std::atomic<FloatType>, numBands> emphasisCoefficient{
+            {static_cast<FloatType>(0.1), static_cast<FloatType>(0.1), static_cast<FloatType>(0.1)}};
+    std::array<std::array<FloatType, 2>, numBands> emphasisState{};
     std::array<std::unique_ptr<juce::dsp::Oversampling<FloatType>>, numSamplers>
             overSamplers{};
     std::atomic<size_t> idxSampler = zldsp::overSample::defaultI;
@@ -505,13 +444,14 @@ public:
         apvts = &parameters;
     }
 
-    static constexpr std::array<const char *, 18> getIDs() {
+    static constexpr std::array<const char *, 20> getIDs() {
         return {zldsp::effectIn::ID, zldsp::wet::ID, zldsp::autoGain::ID,
                 zldsp::lowSplit::ID, zldsp::highSplit::ID, zldsp::overSample::ID,
                 zldsp::styleLow::ID, zldsp::curveLow::ID,
                 zldsp::styleMid::ID, zldsp::curveMid::ID,
                 zldsp::styleHigh::ID, zldsp::curveHigh::ID, zldsp::bandGainLow::ID, zldsp::bandGainMid::ID, zldsp::bandGainHigh::ID,
-                zldsp::midSide::ID, zldsp::drive::ID, zldsp::stereoSpread::ID};
+                zldsp::midSide::ID, zldsp::drive::ID,
+                zldsp::spreadLow::ID, zldsp::spreadMid::ID, zldsp::spreadHigh::ID};
     }
 
     void addListeners() {
@@ -570,8 +510,16 @@ public:
             waveShaper->setMidSide(static_cast<FloatType>(newValue) / static_cast<FloatType>(100));
         } else if (parameterID == zldsp::drive::ID) {
             waveShaper->setDrive(static_cast<FloatType>(newValue));
-        } else if (parameterID == zldsp::stereoSpread::ID) {
-            waveShaper->setStereoSpread(static_cast<FloatType>(newValue) / static_cast<FloatType>(100));
+        } else if (parameterID == zldsp::spreadLow::ID || parameterID == zldsp::spreadMid::ID ||
+                   parameterID == zldsp::spreadHigh::ID) {
+            size_t band = 0;
+            if (parameterID == zldsp::spreadMid::ID) {
+                band = 1;
+            } else if (parameterID == zldsp::spreadHigh::ID) {
+                band = 2;
+            }
+            waveShaper->setBandSpread(band, static_cast<FloatType>(newValue) /
+                                             static_cast<FloatType>(100));
         }
     }
 

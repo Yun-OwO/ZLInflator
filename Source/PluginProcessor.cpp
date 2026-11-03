@@ -239,6 +239,10 @@ shaper::BandShaper<float> *ZLInflatorAudioProcessor::getBandShaper(size_t band) 
     return waveShaper.getBandShaper(band);
 }
 
+shaper::BandShaper<float> *ZLInflatorAudioProcessor::getBandSpreadShaper(size_t band) {
+    return waveShaper.getBandSpreadShaper(band);
+}
+
 void ZLInflatorAudioProcessor::parameterChanged(const juce::String &parameterID, float newValue) {
     if (parameterID.equalsIgnoreCase(zldsp::inputGain::ID)) {
         inGain.setGainDecibels(newValue);

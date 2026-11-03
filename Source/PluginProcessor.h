@@ -101,6 +101,8 @@ public:
 
     /** the shaper of one band, bands are ordered low, mid, high */
     shaper::BandShaper<float> *getBandShaper(size_t band);
+    /** the curve the right hand channel of that band runs */
+    shaper::BandShaper<float> *getBandSpreadShaper(size_t band);
 
     void parameterChanged(const juce::String &parameterID, float newValue) override;
 

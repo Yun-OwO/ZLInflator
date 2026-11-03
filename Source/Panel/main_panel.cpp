@@ -101,6 +101,8 @@ MainPanel::MainPanel(ZLInflatorAudioProcessor &p) :
         bandPanel(p.parameters, uiBase),
         bandPlotComponent([&p](size_t band) -> const shaper::BandShaper<float> * {
             return p.getBandShaper(band);
+        }, [&p](size_t band) -> const shaper::BandShaper<float> * {
+            return p.getBandSpreadShaper(band);
         }, p.getSpectrumSource(), p.parameters, uiBase),
         meterPanel(p, uiBase),
         footerPanel(p.parameters, uiBase) {

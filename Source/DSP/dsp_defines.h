@@ -308,11 +308,27 @@ namespace zldsp {
         auto static constexpr defaultV = 0.0f;
     };
 
-    /** how far the left and the right channel of a band drift apart, in percent */
-    class stereoSpread : public FloatParameters<stereoSpread> {
+    /** how far the left and the right shaper of a band drift apart, in percent */
+    class spreadLow : public FloatParameters<spreadLow> {
     public:
-        auto static constexpr ID = "stereo_spread";
-        auto static constexpr name = "Stereo Spread (%)";
+        auto static constexpr ID = "spread_low";
+        auto static constexpr name = "Low Spread (%)";
+        inline auto static const range = juce::NormalisableRange<float>(0.f, 100.f, 0.1f, 1.f, true);
+        auto static constexpr defaultV = 0.0f;
+    };
+
+    class spreadMid : public FloatParameters<spreadMid> {
+    public:
+        auto static constexpr ID = "spread_mid";
+        auto static constexpr name = "Mid Spread (%)";
+        inline auto static const range = juce::NormalisableRange<float>(0.f, 100.f, 0.1f, 1.f, true);
+        auto static constexpr defaultV = 0.0f;
+    };
+
+    class spreadHigh : public FloatParameters<spreadHigh> {
+    public:
+        auto static constexpr ID = "spread_high";
+        auto static constexpr name = "High Spread (%)";
         inline auto static const range = juce::NormalisableRange<float>(0.f, 100.f, 0.1f, 1.f, true);
         auto static constexpr defaultV = 0.0f;
     };
@@ -332,7 +348,8 @@ namespace zldsp {
                    styleMid::get(), curveMid::get(),
                    styleHigh::get(), curveHigh::get(),
                    bandGainLow::get(), bandGainMid::get(), bandGainHigh::get(),
-                   midSide::get(), drive::get(), stereoSpread::get());
+                   midSide::get(), drive::get(),
+                   spreadLow::get(), spreadMid::get(), spreadHigh::get());
         return layout;
     }
 }
