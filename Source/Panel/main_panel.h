@@ -62,7 +62,7 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ChoiceButton)
 };
 
-class MainPanel : public juce::Component {
+class MainPanel : public juce::Component, private juce::Timer {
 public:
     explicit MainPanel(ZLInflatorAudioProcessor &p);
 
@@ -73,6 +73,16 @@ public:
     void resized() override;
 
 private:
+    void rebuildBackground();
+
+    void timerCallback() override;
+
+    juce::Image background;
+    juce::Rectangle<int> renderedBounds;
+    float cachedFontSize = 0.f;
+    size_t cachedStyle = 0;
+    bool rebuildPending = false;
+
     zlinterface::UIBase uiBase;
     zlpanel::LogoPanel logoPanel;
     // the bypass switch sits in the top right corner, the auto gain switch

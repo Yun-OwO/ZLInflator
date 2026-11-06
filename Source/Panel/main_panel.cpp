@@ -143,14 +143,64 @@ MainPanel::MainPanel(ZLInflatorAudioProcessor &p) :
     addAndMakeVisible(footerPanel);
 }
 
-MainPanel::~MainPanel() = default;
+MainPanel::~MainPanel() {
+    stopTimer();
+}
 
 void MainPanel::paint(juce::Graphics &g) {
+    // the sculpted card takes two drop shadows over the whole window, so it is
+    // rendered once into an image and blitted afterwards: a child repaint must
+    // not pay for it again at frame rate
+    if (background.isNull()) {
+        rebuildBackground();
+        g.drawImageAt(background, 0, 0);
+        return;
+    }
+    if (cachedStyle != uiBase.getStyle()) {
+        // the palette is a discrete change, pay for it once
+        rebuildBackground();
+        g.drawImageAt(background, 0, 0);
+        return;
+    }
+    if (renderedBounds != getLocalBounds()) {
+        // while the window is being dragged bigger the card is stretched from
+        // the cached image: re-blurring two drop shadows on every resize step
+        // costs more than a frame, and the crisp version lands once it stops
+        g.drawImage(background, getLocalBounds().toFloat());
+        if (!rebuildPending) {
+            rebuildPending = true;
+            startTimer(160);
+        }
+        return;
+    }
+    g.drawImageAt(background, 0, 0);
+}
+
+void MainPanel::timerCallback() {
+    stopTimer();
+    rebuildPending = false;
+    if (renderedBounds != getLocalBounds() ||
+        cachedFontSize != getPanelFontSize(getLocalBounds().toFloat())) {
+        rebuildBackground();
+        repaint();
+    }
+}
+
+void MainPanel::rebuildBackground() {
+    const auto bound = getLocalBounds();
+    if (bound.isEmpty()) {
+        return;
+    }
+    const auto fontSize = getPanelFontSize(bound.toFloat());
+    cachedFontSize = fontSize;
+    cachedStyle = uiBase.getStyle();
+    renderedBounds = bound;
+    background = juce::Image(juce::Image::ARGB, bound.getWidth(), bound.getHeight(), true);
+    juce::Graphics g(background);
     g.fillAll(uiBase.getBackgroundColor());
-    auto bound = getLocalBounds().toFloat();
-    const auto fontSize = getPanelFontSize(bound);
-    bound = uiBase.fillRoundedShadowRectangle(g, bound, fontSize * 0.5f, {});
-    uiBase.fillRoundedInnerShadowRectangle(g, bound, fontSize * 0.5f, {.blurRadius=0.45f, .flip=true});
+    auto area = bound.toFloat();
+    area = uiBase.fillRoundedShadowRectangle(g, area, fontSize * 0.5f, {});
+    uiBase.fillRoundedInnerShadowRectangle(g, area, fontSize * 0.5f, {.blurRadius=0.45f, .flip=true});
 }
 
 void MainPanel::resized() {

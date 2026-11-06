@@ -27,6 +27,9 @@ namespace zlinterface {
             label.setText(labelText, juce::dontSendNotification);
             label.setLookAndFeel(&nameLookAndFeel);
             addAndMakeVisible(label);
+            // the pill never changes, so keep its shadowed frame in an image:
+            // an animating meter on top must not repaint the whole card
+            setBufferedToImage(true);
         }
 
         ~MeterBackgroundComponent() override {
@@ -95,6 +98,10 @@ namespace zlinterface {
         }
 
         void timerCallback() override {
+            // nothing to draw while the editor is closed or minimised
+            if (!isShowing()) {
+                return;
+            }
             triggerAsyncUpdate();
         }
 

@@ -55,7 +55,7 @@ namespace zlinterface {
     auto inline const FontHuge2 = 3.0f;
     auto inline const FontHuge3 = 4.5f;
 
-    auto inline const RefreshFreqHz = 60;
+    auto inline const RefreshFreqHz = 30;
 
     /** Height of the box itself, in units of the font size. Buttons and combo
         boxes all use it, so a row of them lines up and every button matches. */
@@ -310,6 +310,8 @@ namespace zlinterface {
         inline float getFontSize() { return fontSize.load(); }
 
         void setStyle(size_t idx) { styleID.store(idx); }
+
+        inline size_t getStyle() { return styleID.load(); }
 
         inline juce::Colour getTextColor() { return styleColors[styleID.load()].TextColor; }
 

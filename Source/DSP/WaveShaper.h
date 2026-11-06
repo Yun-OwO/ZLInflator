@@ -188,7 +188,7 @@ public:
                 static_cast<FloatType>(std::sqrt(juce::jmax(20.0f, high) * 20000.0))};
         for (size_t band = 0; band < centres.size(); ++band) {
             const auto spread = spreadAmounts[band].load();
-            tiltAmount[band].store(spread * static_cast<FloatType>(0.5));
+            tiltAmount[band].store(spread * static_cast<FloatType>(0.85));
             const auto ratio = juce::jlimit(0.0, 0.45, static_cast<double>(centres[band]) / rate);
             emphasisCoefficient[band].store(static_cast<FloatType>(1.0 - std::exp(-2.0 * juce::MathConstants<double>::pi * ratio)));
         }
@@ -261,10 +261,12 @@ public:
             for (size_t i = 0; i < numBands; ++i) {
                 processBand(blocks[i], &bandShapers[i], i);
             }
-            for (size_t i = 1; i < numBands; ++i) {
+            for (size_t i = 0; i < numBands; ++i) {
                 // the band trim follows the shaper, so dragging the level line
                 // of a band on the figure is what sets it
                 blocks[i].multiplyBy(bandGains[i].load());
+            }
+            for (size_t i = 1; i < numBands; ++i) {
                 blocks[0].add(blocks[i]);
             }
 
@@ -369,7 +371,7 @@ private:
                 const auto sample = data[s];
                 emphasis += coefficient * (sample - emphasis);
                 const auto pushed = emphasis * lowGain + (sample - emphasis) * highGain;
-                data[s] = shape(*bandShaper, pushed, wet, dry, drive);
+                data[s] = shape(*channelShaper, pushed, wet, dry, drive);
             }
         }
     }
@@ -382,7 +384,7 @@ private:
         const auto curve = bandCurves[band];
         const auto compensation = bandCompensations[band];
         const auto eased = curve * (static_cast<FloatType>(1) -
-                                    spread * static_cast<FloatType>(0.35));
+                                    spread * static_cast<FloatType>(0.65));
         const auto pushed = curve + spread * (static_cast<FloatType>(1) - curve);
         bandShapers[band].setParameters(juce::jlimit(static_cast<FloatType>(0),
                                                      static_cast<FloatType>(1), eased), compensation);
@@ -504,6 +506,15 @@ public:
                 band = 2;
             }
             waveShaper->setBandType(band, static_cast<size_t>(newValue));
+        } else if (parameterID == zldsp::bandGainLow::ID || parameterID == zldsp::bandGainMid::ID ||
+                   parameterID == zldsp::bandGainHigh::ID) {
+            size_t band = 0;
+            if (parameterID == zldsp::bandGainMid::ID) {
+                band = 1;
+            } else if (parameterID == zldsp::bandGainHigh::ID) {
+                band = 2;
+            }
+            waveShaper->setBandGain(band, static_cast<FloatType>(newValue));
         } else if (parameterID == zldsp::overSample::ID) {
             waveShaper->setOverSampleFactor(static_cast<int>(newValue));
         } else if (parameterID == zldsp::midSide::ID) {

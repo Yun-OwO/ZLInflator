@@ -45,6 +45,8 @@ namespace zlinterface {
 
         void paint(juce::Graphics &) override;
 
+        void resized() override;
+
         void mouseMove(const juce::MouseEvent &) override;
 
         void mouseDown(const juce::MouseEvent &) override;
@@ -84,6 +86,11 @@ namespace zlinterface {
         void refreshParameters();
 
         void updateSpectrum();
+
+        /** the part of the figure that only moves when a parameter does:
+            the card, the grid, the curves and the split lines. Redrawn into an
+            image so a 30 Hz repaint only has to draw the spectrum on top. */
+        void rebuildBackground();
 
     private:
         // coordinates
@@ -170,6 +177,12 @@ namespace zlinterface {
         juce::Point<float> dragHintPosition;
 
         juce::Point<float> lastMousePos;
+
+        juce::Image backgroundCache;
+        bool backgroundDirty = true;
+        float backgroundScale = 1.f;
+        float cachedFontSize = 0.f;
+        juce::Rectangle<float> cachedPlotBound;
 
         constexpr const static std::array IDs{zldsp::lowSplit::ID, zldsp::highSplit::ID, zldsp::effectIn::ID,
                                              zldsp::bandGainLow::ID, zldsp::bandGainMid::ID, zldsp::bandGainHigh::ID,

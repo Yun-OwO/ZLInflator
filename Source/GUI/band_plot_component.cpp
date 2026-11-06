@@ -53,6 +53,10 @@ namespace zlinterface {
         }
     }
 
+    void BandPlotComponent::resized() {
+        backgroundDirty = true;
+    }
+
     void BandPlotComponent::paint(juce::Graphics &g) {
         // the timer drives the refresh while the editor sits idle, but the first
         // frame after opening has to be right too, so paint also tops it up
@@ -62,16 +66,65 @@ namespace zlinterface {
         // read the parameters straight from the tree, a repaint can outrun the
         // async callback that announces a change
         refreshParameters();
-        auto bound = getLocalBounds().toFloat();
-        const auto fontSize = uiBase.getFontSize();
-        auto innerBound = uiBase.fillRoundedShadowRectangle(g, bound, fontSize * .5f,
-                                                            {.mainColour=uiBase.getBackgroundColor()});
-        innerBound = uiBase.fillRoundedInnerShadowRectangle(g, innerBound, fontSize * .5f,
-                                                            {.blurRadius=0.45f, .flip=true});
         const auto plotBound = getPlotBound();
         if (plotBound.isEmpty()) {
             return;
         }
+        // everything but the spectrum and the drag readout only changes when a
+        // parameter or the mouse does, so it lives in a cached image: a 30 Hz
+        // repaint then costs one blit plus the spectrum instead of re-blurring
+        // the whole card and rebuilding every curve
+        if (backgroundDirty || backgroundCache.isNull() ||
+            cachedFontSize != uiBase.getFontSize() || cachedPlotBound != plotBound) {
+            rebuildBackground();
+        }
+        g.drawImageAt(backgroundCache, 0, 0);
+
+        // the spectrum sits on top of the curves, the way a FabFilter plot reads
+        drawSpectrum(g, plotBound);
+
+        // the value of whatever is being dragged, right under the mouse
+        if (dragHint.isNotEmpty() && (isDragging || isDraggingGain || isDraggingSpread)) {
+            const auto fontSize = uiBase.getFontSize();
+            const auto hintWidth = fontSize * 4.2f;
+            const auto hintHeight = fontSize * 1.5f;
+            const auto hintBound = juce::Rectangle<float>(dragHintPosition.x - hintWidth * .5f,
+                                                          dragHintPosition.y - hintHeight * 1.35f,
+                                                          hintWidth, hintHeight)
+                    .constrainedWithin(getLocalBounds().toFloat());
+            g.setColour(uiBase.getBackgroundColor().withAlpha(.94f));
+            g.fillRoundedRectangle(hintBound, hintHeight * .4f);
+            g.setColour(uiBase.getLineColor1().withAlpha(.45f));
+            g.drawRoundedRectangle(hintBound, hintHeight * .4f, 1.f);
+            g.setColour(uiBase.getTextColor());
+            g.setFont(juce::Font(fontSize * .8f));
+            g.drawText(dragHint, hintBound.toNearestInt(), juce::Justification::centred, false);
+        }
+    }
+
+    void BandPlotComponent::rebuildBackground() {
+        backgroundDirty = false;
+        const auto localBound = getLocalBounds().toFloat();
+        if (localBound.isEmpty()) {
+            return;
+        }
+        const auto width = juce::jmax(1, juce::roundToInt(localBound.getWidth()));
+        const auto height = juce::jmax(1, juce::roundToInt(localBound.getHeight()));
+        if (!backgroundCache.isValid() ||
+            backgroundCache.getWidth() != width || backgroundCache.getHeight() != height) {
+            backgroundCache = juce::Image(juce::Image::ARGB, width, height, true);
+        } else {
+            backgroundCache.clear(backgroundCache.getBounds());
+        }
+        juce::Graphics g(backgroundCache);
+        const auto fontSize = uiBase.getFontSize();
+        auto innerBound = uiBase.fillRoundedShadowRectangle(g, localBound, fontSize * .5f,
+                                                            {.mainColour=uiBase.getBackgroundColor()});
+        innerBound = uiBase.fillRoundedInnerShadowRectangle(g, innerBound, fontSize * .5f,
+                                                            {.blurRadius=0.45f, .flip=true});
+        const auto plotBound = getPlotBound();
+        cachedFontSize = fontSize;
+        cachedPlotBound = plotBound;
 
         // band backgrounds, separated by the split lines
         for (size_t i = 0; i < BandNUM; ++i) {
@@ -107,29 +160,9 @@ namespace zlinterface {
         // transfer curves of the three bands
         drawBandCurves(g, plotBound);
 
-        // the spectrum sits on top of the curves, the way a FabFilter plot reads
-        drawSpectrum(g, plotBound);
-
         // split lines, drawn above the curves
         for (size_t i = 0; i < splitValues.size(); ++i) {
             drawSplitLine(g, plotBound, i);
-        }
-
-        // the value of whatever is being dragged, right under the mouse
-        if (dragHint.isNotEmpty() && (isDragging || isDraggingGain || isDraggingSpread)) {
-            const auto hintWidth = fontSize * 4.2f;
-            const auto hintHeight = fontSize * 1.5f;
-            const auto hintBound = juce::Rectangle<float>(dragHintPosition.x - hintWidth * .5f,
-                                                          dragHintPosition.y - hintHeight * 1.35f,
-                                                          hintWidth, hintHeight)
-                    .constrainedWithin(getLocalBounds().toFloat());
-            g.setColour(uiBase.getBackgroundColor().withAlpha(.94f));
-            g.fillRoundedRectangle(hintBound, hintHeight * .4f);
-            g.setColour(uiBase.getLineColor1().withAlpha(.45f));
-            g.drawRoundedRectangle(hintBound, hintHeight * .4f, 1.f);
-            g.setColour(uiBase.getTextColor());
-            g.setFont(juce::Font(fontSize * .8f));
-            g.drawText(dragHint, hintBound.toNearestInt(), juce::Justification::centred, false);
         }
     }
 
@@ -360,6 +393,7 @@ namespace zlinterface {
         setMouseCursor(activeBand >= 0 ? juce::MouseCursor::UpDownResizeCursor
                                        : juce::MouseCursor::NormalCursor);
         if (previous != activeHandle || previousBand != activeBand) {
+            backgroundDirty = true;
             repaint();
         }
     }
@@ -459,6 +493,7 @@ namespace zlinterface {
         isDraggingGain = false;
         isDraggingSpread = false;
         dragHint.clear();
+        backgroundDirty = true;
         repaint();
     }
 
@@ -496,24 +531,31 @@ namespace zlinterface {
         if (!isDragging && !isDraggingGain && !isDraggingSpread && (activeHandle >= 0 || activeBand >= 0)) {
             activeHandle = -1;
             activeBand = -1;
+            backgroundDirty = true;
             repaint();
         }
     }
 
     void BandPlotComponent::parameterChanged(const juce::String &, float) {
         refreshParameters();
+        backgroundDirty = true;
         triggerAsyncUpdate();
     }
 
     void BandPlotComponent::handleAsyncUpdate() {
         refreshParameters();
+        backgroundDirty = true;
         repaint();
     }
 
     void BandPlotComponent::timerCallback() {
+        if (!isShowing()) {
+            return;
+        }
         updateSpectrum();
         refreshParameters();
-        repaint();
+        // only the spectrum moved, so the card and the curves stay cached
+        repaint(getPlotBound().toNearestInt());
     }
 
     void BandPlotComponent::updateSpectrum() {
